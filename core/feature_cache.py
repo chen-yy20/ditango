@@ -6,7 +6,7 @@ import warnings
 import numpy as np
 import torch.distributed as dist
 
-from . import get_stride_map, get_usp_group, get_isp_group
+from . import get_redundancy_map, get_usp_group, get_isp_group
 from ..logger import init_logger
 
 logger = init_logger("__main__")
@@ -29,13 +29,13 @@ class oCache:
         self.curr_isp_size = isp_size       
     
     def get_curr_isp_stride(self, layer_id: int):
-        isp_stride = int(get_stride_map()[self.timestep, layer_id].item())
+        isp_stride = int(get_redundancy_map()[self.timestep, layer_id].item())
         return isp_stride if isp_stride < self.curr_isp_size else self.curr_isp_size
     
     def get_next_isp_stride(self, layer_id: int):
         if self.timestep + 1 >= self.num_timesteps:
             return self.curr_isp_size
-        isp_stride = int(get_stride_map()[self.timestep + 1, layer_id].item())
+        isp_stride = int(get_redundancy_map()[self.timestep + 1, layer_id].item())
         return isp_stride if isp_stride < self.curr_isp_size else self.curr_isp_size
    
     def get_block(self, layer_id, block_id):
@@ -100,7 +100,7 @@ class easyCache:
        
    
     def is_important(self, layer_id: int):
-        importance = int(get_stride_map()[self.timestep, layer_id].item())
+        importance = int(get_redundancy_map()[self.timestep, layer_id].item())
         return importance >= self.threshold
    
     def get_feature(self, layer_id, name):
@@ -136,7 +136,7 @@ _GLOBAL_KV_CACHE: Optional[Union[oCache, easyCache]] = None
 def init_cache(num_timesteps, num_layers, threshold = None) -> Union[oCache, easyCache]:
     """Initialize or reinitialize the global KV cache"""
     global _GLOBAL_KV_CACHE
-    assert get_stride_map() is not None, "Stride map must be initialized before init_cache()"
+    assert get_redundancy_map() is not None, "Stride map must be initialized before init_cache()"
     if threshold is not None:
         _GLOBAL_KV_CACHE = easyCache(num_timesteps, num_layers, threshold)
     else:
