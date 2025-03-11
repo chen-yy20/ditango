@@ -196,12 +196,6 @@ class CVX_UlyssesAttnProcessor:
         attention_mask: Optional[torch.Tensor] = None,
         image_rotary_emb: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-
-        if exist_cache():
-            if not get_cache().is_important(self.layer_id):
-                hidden_states = get_cache().get_feature(self.layer_id, name="hidden")
-                encoder_hidden_states = get_cache().get_feature(self.layer_id, name="encoder_hidden")
-                return hidden_states, encoder_hidden_states
           
         batch_size = hidden_states.shape[0]
 
@@ -213,15 +207,15 @@ class CVX_UlyssesAttnProcessor:
         encoder_key = attn.to_k(encoder_hidden_states)
         encoder_value = attn.to_v(encoder_hidden_states)
 
-        if get_usp_group().world_size > 1:
-            assert attn.heads % get_usp_group().world_size == 0
-            attn_heads = attn.heads // get_usp_group().world_size
+        if get_isp_group().world_size > 1:
+            assert attn.heads % get_isp_group().world_size == 0
+            attn_heads = attn.heads // get_isp_group().world_size
             query, key, value = map(
-                lambda x: get_usp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=0),
+                lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=0),
                 [query, key, value],
             )
             encoder_query, encoder_key, encoder_value = map(
-                lambda x: get_usp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=1),
+                lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=1),
                 [encoder_query, encoder_key, encoder_value],
             )
         else:
@@ -282,19 +276,15 @@ class CVX_UlyssesAttnProcessor:
             [text_seq_length, hidden_states.size(1) - text_seq_length], dim=1)
 
         # logger.debug(f"3:{hidden_states.shape=} {encoder_hidden_states.shape=}")
-        if get_usp_group().world_size > 1:
-            hidden_states = get_usp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)
-            encoder_hidden_states = get_usp_group().uneven_all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=1)
+        if get_isp_group().world_size > 1:
+            hidden_states = get_isp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)
+            encoder_hidden_states = get_isp_group().uneven_all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=1)
         # logger.debug(f"4:{hidden_states.shape=} {encoder_hidden_states.shape=}")
         # Linear projections and dropout
         hidden_states = attn.to_out[0](hidden_states)
         encoder_hidden_states = attn.to_out[0](encoder_hidden_states)
         hidden_states = attn.to_out[1](hidden_states)
         encoder_hidden_states = attn.to_out[1](encoder_hidden_states)
-        
-        if exist_cache():
-            get_cache().store_feature(self.layer_id, name="hidden", feature=hidden_states)
-            get_cache().store_feature(self.layer_id, name="encoder_hidden", feature=encoder_hidden_states)
 
         return hidden_states, encoder_hidden_states
 
@@ -469,7 +459,7 @@ class CVX_RingAttnProcessor:
 class CVX_oCacheAttnProcessor:
   def __init__(self, layer_id):
     # oAttn / uAttn
-    self.oAttn = uAttention(layer_id, get_isp_group())
+    self.oAttn = oAttention(layer_id, get_isp_group())
 
   def __call__(self,
       attn: Attention,

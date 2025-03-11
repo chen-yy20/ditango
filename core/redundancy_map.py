@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 from typing import List, Optional, Dict, Tuple
+
+import torch.distributed
 from . import get_usp_group
 
 class StrideMap:
@@ -65,8 +67,6 @@ class StrideMap:
         self.set_pattern_for_row(timestep_indices[0], [], [self.base_weight])
         for idx in timestep_indices[1:]:
             self.set_pattern_for_row(idx, split_list, pattern_list)
-        if torch.distributed.get_rank() == 0:
-            print_redundancy_map(get_redundancy_map())
     
     def get_map(self) -> torch.Tensor:
         """Return the stride map tensor"""
@@ -77,7 +77,7 @@ class StrideMap:
         self.redundancy_map = self._init_map()
 
 
-def print_redundancy_map(redundancy_map: torch.Tensor, logger=None):
+def print_redundancy_map(logger=None):
     """
     Print total stride map
     
@@ -87,14 +87,16 @@ def print_redundancy_map(redundancy_map: torch.Tensor, logger=None):
     """
     # 设置numpy打印选项
     np.set_printoptions(threshold=np.inf, linewidth=1000)
+    redundancy_map = get_redundancy_map()
     
     # 转换为numpy数组并格式化
     formatted_output = '\n'.join([' '.join(map(str, row)) for row in redundancy_map.numpy()])
     
-    if logger:
-        logger.debug(f"redundancy_map:\n{formatted_output}")
-    else:
-        print(f"redundancy_map:\n{formatted_output}", flush=True)
+    if torch.distributed.get_rank()==0:
+        if logger:
+            logger.debug(f"redundancy_map:\n{formatted_output}")
+        else:
+            print(f"redundancy_map:\n{formatted_output}", flush=True)
 
 _redundancy_map: Optional[torch.Tensor] = None
 def init_redundancy_map(

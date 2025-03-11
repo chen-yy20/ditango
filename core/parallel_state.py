@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Tuple, Union
 import torch
 import torch.distributed
 
-from ..logger import init_logger
+from ditango.logger import init_logger
 from . import GroupCoordinator
 
 logger = init_logger(__name__)
@@ -37,35 +37,35 @@ def get_usp_group() -> GroupCoordinator:
   assert _USP is not None, ("Unified sequence parallel group is not initialized")
   return _USP
 
-def get_iosp_group(sparse_n: Optional[int] = None) -> Tuple[GroupCoordinator, GroupCoordinator]:
+def get_iosp_group(stride: Optional[int] = None) -> Tuple[GroupCoordinator, GroupCoordinator]:
     """
-    Get the ISP and OSP parallel groups for specified sparse_n
+    Get the ISP and OSP parallel groups for specified stride
     
     Args:
-        sparse_n: Sparsity parameter n
+        stride: Sparsity parameter n
         
     Returns:
         tuple: (osp_group, isp_group) - The outer and inner sequence parallel groups
         
     Raises:
-        AssertionError: If IOSP groups are not initialized or specified sparse_n doesn't exist
+        AssertionError: If IOSP groups are not initialized or specified stride doesn't exist
     """
     assert _IOSP_GROUP_DICT is not None, "IOSP groups are not initialized"
     
-    if sparse_n is None:
-        assert len(_IOSP_GROUP_DICT) == 1, "Found more than 1 iosp group pair, need to provide SPARSE_N"
+    if stride is None:
+        assert len(_IOSP_GROUP_DICT) == 1, "Found more than 1 iosp group pair, need to provide stride"
         groups = next(iter(_IOSP_GROUP_DICT.values()))
     else:
-        assert sparse_n in _IOSP_GROUP_DICT, f"No IOSP groups found for sparse_n={sparse_n}"
-        groups = _IOSP_GROUP_DICT[sparse_n]
+        assert stride in _IOSP_GROUP_DICT, f"No IOSP groups found for stride={stride}"
+        groups = _IOSP_GROUP_DICT[stride]
     return groups['osp'], groups['isp']
   
-def get_isp_group(sparse_n: Optional[int] = None) -> GroupCoordinator:
-    _, isp = get_iosp_group(sparse_n)
+def get_isp_group(stride: Optional[int] = None) -> GroupCoordinator:
+    _, isp = get_iosp_group(stride)
     return isp
 
-def get_osp_group(sparse_n: Optional[int] = None) -> GroupCoordinator:
-    osp, _ = get_iosp_group(sparse_n)
+def get_osp_group(stride: Optional[int] = None) -> GroupCoordinator:
+    osp, _ = get_iosp_group(stride)
     return osp
 
 
@@ -151,15 +151,15 @@ def generate_parallel_groups(world_size: int, do_cfg_guidance: bool = True, spar
         assert sparse_type in ['full', 'sequential'], f"Sparse type can only be 'full' or 'sequential'! Found {sparse_type}."
     
     if isinstance(sparse_type, List):
-        sparse_n = sparse_type
+        stride_list = sparse_type
     else:
-        sparse_n = [1]
+        stride_list = [1]
     
       
     iosp_dict = {}
     if world_size == 1:
-        for n in sparse_n:
-            iosp_dict[n] = (None, None)
+        for stride in stride_list:
+            iosp_dict[stride] = (None, None)
         return None, None, iosp_dict
 
     if do_cfg_guidance:
@@ -184,21 +184,21 @@ def generate_parallel_groups(world_size: int, do_cfg_guidance: bool = True, spar
 
     usp_size = len(usp_group_ranks[0])
     if sparse_type == 'sequential':
-        sparse_n = [usp_size]
+        stride_list = [1]
     
     # Set iosp group
-    for n in sparse_n:
-        assert n % usp_size == 0 or usp_size % n == 0, f"Does not support {n=}, {usp_size=}"
-        osp_size = gcd(usp_size, n)
-        isp_size = usp_size // osp_size
-        isp_groups = []
+    for stride in stride_list:
+        assert stride % usp_size == 0 or usp_size % stride == 0, f"Does not support {stride=} but {usp_size=}"
+        isp_size = gcd(usp_size, stride)
+        osp_size = usp_size // isp_size
         osp_groups = []
+        isp_groups = []
         for rank_list in usp_group_ranks:
-            for i in range(0, usp_size, isp_size):
-                isp_groups.append(rank_list[i:i+isp_size])
-            for i in range(isp_size):
-                osp_groups.append(rank_list[i::isp_size])
-            iosp_dict[n] = (osp_groups, isp_groups)
+            for i in range(0, usp_size, osp_size):
+                osp_groups.append(rank_list[i:i+osp_size])
+            for i in range(osp_size):
+                isp_groups.append(rank_list[i::osp_size])
+            iosp_dict[stride] = (osp_groups, isp_groups)
             
     return cfg_group_ranks, usp_group_ranks, iosp_dict
 
@@ -259,8 +259,8 @@ def init_model_parallel(
       # logger.debug(f"{dp_group_ranks=}")
       logger.debug(f"{cfg_group_ranks=}")
       logger.debug(f"{usp_group_ranks=}")
-      for n, (osp_ranks, isp_ranks) in iosp_dict.items():
-          logger.debug(f"sparse_n={n}, osp_ranks={osp_ranks}, isp_ranks={isp_ranks}")
+      for stride, (osp_ranks, isp_ranks) in iosp_dict.items():
+          logger.debug(f"stride={stride}, osp_ranks={osp_ranks}, isp_ranks={isp_ranks}")
       
 
 def destroy_model_parallel():

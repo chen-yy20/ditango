@@ -31,13 +31,18 @@ from diffusers.models.normalization import AdaLayerNorm, CogVideoXLayerNormZero
 
 from ditango.core.parallel_state import get_usp_group, get_cfg_group
 from ditango.core.feature_cache import get_cache
+from ditango.core.arguments import get_args
 from ditango.executor.utils import split_tensor_uneven, remove_padding_after_gather
 from ditango.logger import init_logger
 from ditango.timer import get_timer
-from ditango.executor.model.attention_processor import CVX_RingAttnProcessor, CVX_oCacheAttnProcessor, CVX_UlyssesAttnProcessor
+from ditango.executor.model.attention_processor import CVX_oCacheAttnProcessor
+from ditango.baseline.ulysses import CVX_UlyssesAttnProcessor
+from ditango.baseline.distrifusion import CVX_DistriFusion_AttnProcessor
+
 # from ditango.executor.model.attention_processor import Ulysses_CogVideoXAttnProcessor2_0, FusedCogVideoXAttnProcessor2_0
 
 logger = init_logger(__name__)    # pylint: disable=invalid-name
+args = get_args()
 
 
 use_std = False
@@ -100,6 +105,14 @@ class CogVideoXBlock(nn.Module):
         # 1. Self Attention
         self.layer_id = layer_id
         self.norm1 = CogVideoXLayerNormZero(time_embed_dim, dim, norm_elementwise_affine, norm_eps, bias=True)
+        if args.use_ulysses:
+            logger.warning("======= You are using baseline Ulysses Attention instead of DiTango Attention. =========")
+            attn_processor = CVX_UlyssesAttnProcessor(layer_id)
+        elif args.use_distrifusion:
+            logger.warning("======= You are using baseline DistriFusion Attention instead of DiTango Attention. =========")
+            attn_processor = CVX_DistriFusion_AttnProcessor(layer_id)
+        else:
+            attn_processor = CVX_oCacheAttnProcessor(layer_id)
         self.attn1 = Attention(
             query_dim=dim,
             dim_head=attention_head_dim,
@@ -108,10 +121,7 @@ class CogVideoXBlock(nn.Module):
             eps=1e-6,
             bias=attention_bias,
             out_bias=attention_out_bias,
-            # processor = CVX_SparseAttnProcessor(layer_id),
-            # processor = CVX_UlyssesAttnProcessor(layer_id),
-            # processor = CVX_RingAttnProcessor(layer_id),
-            processor= CVX_oCacheAttnProcessor(layer_id)
+            processor= attn_processor,
         )
 
         # 2. Feed Forward
@@ -456,14 +466,12 @@ class CogVideoXTransformer3DModel(ModelMixin, ConfigMixin):
         if get_usp_group().world_size > 1:
             hidden_states = split_tensor_uneven(hidden_states, get_usp_group().world_size, dim=1, tensor_name='hidden')[get_usp_group().rank_in_group]
             encoder_hidden_states = split_tensor_uneven(encoder_hidden_states, get_usp_group().world_size, dim=1, tensor_name='encoder_hidden')[get_usp_group().rank_in_group]
-            if image_rotary_emb is not None and False:
+            if image_rotary_emb is not None and not args.use_ulysses:
                 cos, sin = image_rotary_emb
                 cos_splits = split_tensor_uneven(cos, get_usp_group().world_size, dim=0)
                 sin_splits = split_tensor_uneven(sin, get_usp_group().world_size, dim=0)
                 image_rotary_emb = (cos_splits[get_usp_group().rank_in_group], sin_splits[get_usp_group().rank_in_group])
-        #     logger.debug(f"{hidden_states.shape=} {encoder_hidden_states.shape=}")
-        #     logger.info(get_padding_dict())
-        # exit()
+        
         for i, block in enumerate(self.transformer_blocks):
             if self.training and self.gradient_checkpointing:
 

@@ -6,11 +6,13 @@ import warnings
 import numpy as np
 import torch.distributed as dist
 
-from . import get_redundancy_map, get_usp_group, get_isp_group
+from .redundancy_map import get_redundancy_map
+from .arguments import get_args
+from ..baseline.cache import easyCache, DistriFusionKVCache
 from ..logger import init_logger
 
-logger = init_logger("__main__")
-do_analyse = True if int(os.getenv("ANALYSIS"))==1 else False
+logger = init_logger(__name__)
+args = get_args()
         
 class oCache:
     
@@ -87,63 +89,24 @@ class oCache:
     def update_timestep(self, timestep: int):
         """Update current timestep"""
         self.timestep = timestep
-    
-    
-class easyCache:
-    
-    def __init__(self, num_timesteps, num_layers, threshold):
-       self.timestep = 0
-       self.num_layers = num_layers
-       self.num_timesteps = num_timesteps
-       self.threshold = threshold
-       self.cache = {}
-       
-   
-    def is_important(self, layer_id: int):
-        importance = int(get_redundancy_map()[self.timestep, layer_id].item())
-        return importance >= self.threshold
-   
-    def get_feature(self, layer_id, name):
-        if name not in self.cache.keys():
-            logger.debug(f"Didn't find tensor {name} in cache")
-        if dist.get_rank()==0:
-            logger.info(f"{self.timestep}-{layer_id} | Trying to get feature {name}")
-        cached_feature = self.cache[name][layer_id]
-        if cached_feature is None:
-            if dist.get_rank():
-                logger.error(f"{self.timestep}-{layer_id} | Get None type cached value.")
-        return cached_feature
-    
-    def store_feature(self, layer_id, name, feature):
-        if name not in self.cache.keys():
-            self.cache[name] = [None] * self.num_layers
-        self.cache[name][layer_id] = feature
-        if dist.get_rank()==0:
-            logger.info(f"{self.timestep}-{layer_id} | Stored tensor {name} in cache. Mem={torch.cuda.memory_allocated()}")
-    
-    def clear(self):
-        logger.warning("============== Clear oCache =================")
-        self.cache.clear()
-    
-    def update_timestep(self, timestep: int):
-        """Update current timestep"""
-        self.timestep = timestep
         
         
 # Global variable and thread lock
-_GLOBAL_KV_CACHE: Optional[Union[oCache, easyCache]] = None
+_GLOBAL_KV_CACHE: Optional[Union[oCache, easyCache, DistriFusionKVCache]] = None
 
-def init_cache(num_timesteps, num_layers, threshold = None) -> Union[oCache, easyCache]:
+def init_cache(num_timesteps, num_layers, threshold = None) -> Union[oCache, easyCache, DistriFusionKVCache]:
     """Initialize or reinitialize the global KV cache"""
     global _GLOBAL_KV_CACHE
     assert get_redundancy_map() is not None, "Stride map must be initialized before init_cache()"
-    if threshold is not None:
+    if args.use_easy_cache:
         _GLOBAL_KV_CACHE = easyCache(num_timesteps, num_layers, threshold)
+    elif args.use_distrifusion:
+        _GLOBAL_KV_CACHE = DistriFusionKVCache()
     else:
         _GLOBAL_KV_CACHE = oCache(num_timesteps, num_layers)
     return _GLOBAL_KV_CACHE
 
-def get_cache() -> Optional[Union[oCache, easyCache]]:
+def get_cache() -> Optional[Union[oCache, easyCache, DistriFusionKVCache]]:
     """Get the global KV cache instance"""
     if _GLOBAL_KV_CACHE is None:
         raise RuntimeError("KV cache not initialized. Call init_cache() first.")
