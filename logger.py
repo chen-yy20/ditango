@@ -28,7 +28,7 @@ class NewLineFormatter(logging.Formatter):
     return msg
 
 
-_root_logger = logging.getLogger("ditlib")
+_root_logger = logging.getLogger("ditango")
 _default_handler = None
 _default_file_handler = None
 _inference_log_file_handler = {}

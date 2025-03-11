@@ -74,12 +74,12 @@ class LayerWiseLogger:
                 ])
 
 # 全局访问接口
-def get_diff_logger() -> LayerWiseLogger:
+def get_diff_sensor() -> LayerWiseLogger:
     if LayerWiseLogger._instance is None:
         return None
     return LayerWiseLogger._instance
 
-def init_diff_logger(log_file: str = "layer_log.csv", clear_existing: bool = True):
+def init_diff_sensor(log_file: str = "layer_log.csv", clear_existing: bool = True):
     """
     初始化全局层级日志记录器
     
@@ -91,8 +91,8 @@ def init_diff_logger(log_file: str = "layer_log.csv", clear_existing: bool = Tru
 # 使用示例 -------------------------------------------------------------------
 if __name__ == "__main__":
     # 初始化日志器，默认会清空已有文件
-    init_diff_logger("example_log.csv")
-    logger = get_diff_logger()
+    init_diff_sensor("example_log.csv")
+    logger = get_diff_sensor()
     
     # 模拟全局时间步管理
     global_step = 0

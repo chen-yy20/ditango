@@ -7,7 +7,7 @@ from .group_coordinate import GroupCoordinator
 from .feature_cache import get_cache, exist_cache
 from ..logger import init_logger
 from ..timer import get_timer
-from ..analyse import get_diff_logger
+from ..diff_sensor import get_diff_sensor
 
 import nvtx
 from contextlib import contextmanager
@@ -181,15 +181,6 @@ class oAttention:
             recv_rank = self.target_block_id * curr_isp_stride + isp_block_rank
             send_rank = curr_isp_stride * send_block_id + isp_block_rank
             
-            # if self.global_rank == 0 and self.layer_id == 15:
-            #     logger.debug(f"{self.cache.timestep}-{self.layer_id} | Try to get target block {self.target_block_id}'s kv |  {recv_rank} -> rank:{self.isp_rank} -> {send_rank}")
-            # send_key = key.detach().clone()
-            # send_value = value.detach().clone() 
-            # self.group.p2p_isend(send_key, dst=send_rank)
-            # self.group.p2p_isend(send_value, dst=send_rank)
-            # first_key = self.group.p2p_irecv(size=block_shape, dtype=dtype, src=recv_rank)
-            # first_value = self.group.p2p_irecv(size=block_shape, dtype=dtype, src=recv_rank)
-            # self.group.p2p_commit()
             first_key, first_value = self.async_ring_p2p_commit(
                 (key, value),
                 src_rank=recv_rank,
@@ -206,9 +197,6 @@ class oAttention:
                 )
             out, lse = update_out_and_lse(out, lse, block_out, block_lse)
             # ============ overlap part end ==============
-            # self.group.p2p_wait()
-            # key = first_key
-            # value = first_value 
             key, value = self.async_ring_p2p_wait_and_update((first_key, first_value))
             
             # logger.debug(f"{self.cache.timestep}-{self.layer_id} | Successfully get target block {self.target_block_id}'s kv |  {recv_rank} -> rank:{self.isp_rank} -> {send_rank}")
@@ -231,21 +219,12 @@ class oAttention:
         for inter_node_step in range(large_ring):
             for intra_node_step in range(curr_isp_stride):
                 if intra_node_step + 1 != curr_isp_stride: 
-                    # send_key = key.detach().clone()
-                    # send_value = value.detach().clone()
-                    # self.group.p2p_isend(send_key, dst=next_rank)
-                    # self.group.p2p_isend(send_value, dst=next_rank)
-                    # next_k = self.group.p2p_irecv(size=block_shape, dtype=dtype, src=prev_rank)
-                    # next_v = self.group.p2p_irecv(size=block_shape, dtype=dtype, src=prev_rank)
-                    # self.group.p2p_commit()
                     next_k, next_v = self.async_ring_p2p_commit(
                         (key, value),
                         src_rank=prev_rank,
                         dst_rank=next_rank,
                     )
                 elif inter_node_step + 1 != large_ring:
-                    # send_key = key.detach().clone()
-                    # send_value = value.detach().clone()
                     inter_next_rank =  (self.isp_rank - gpus_per_node) % full_isp_stride
                     inter_prev_rank = (self.isp_rank + gpus_per_node) % full_isp_stride
                     next_k, next_v = self.async_ring_p2p_commit(
@@ -253,11 +232,6 @@ class oAttention:
                         src_rank=inter_prev_rank,
                         dst_rank=inter_next_rank,
                     )
-                    # self.group.p2p_isend(send_key, dst=inter_next_rank)
-                    # self.group.p2p_isend(send_value, dst=inter_next_rank)
-                    # next_k = self.group.p2p_irecv(size=block_shape, dtype=dtype, src=inter_prev_rank)
-                    # next_v = self.group.p2p_irecv(size=block_shape, dtype=dtype, src=inter_prev_rank)
-                    # self.group.p2p_commit()
                     if self.layer_id == 0:
                         logger.debug(f"{self.cache.timestep}-{self.layer_id} | large ring {inter_node_step} |  {inter_prev_rank} -> rank:{self.isp_rank} -> {inter_next_rank}")
                 block_out, block_lse, _  = flash_attn_func(
@@ -275,9 +249,6 @@ class oAttention:
                 merge_block_cnt += 1
                 
                 if intra_node_step + 1 != curr_isp_stride or inter_node_step + 1 != large_ring:
-                    # self.group.p2p_wait()
-                    # key = next_k
-                    # value = next_v
                     key, value = self.async_ring_p2p_wait_and_update((next_k,next_v))
                     
                 # =============== update Cache ================
@@ -295,8 +266,8 @@ class oAttention:
                     # logger.debug(f"{self.cache.timestep}-{self.layer_id} | {self.isp_rank=} {total_block_num=} , Updated {self.target_block_id=}")
                 
         # store output and lse for analysis
-        if self.global_rank == 0 and get_diff_logger() is not None:
-            get_diff_logger().log_layer(current_step=self.cache.timestep,
+        if self.global_rank == 0 and get_diff_sensor() is not None:
+            get_diff_sensor().log_layer(current_step=self.cache.timestep,
                                         layer_id=self.layer_id,
                                         current_out=out,
                                         current_lse=lse
@@ -477,8 +448,8 @@ class oAttention:
                     self.target_block_id = (self.target_block_id + 1) % total_block_num
                 
         # ================= store output and lse for analysis ===================
-        if self.global_rank == 0 and get_diff_logger() is not None:
-            get_diff_logger().log_layer(current_step=self.cache.timestep,
+        if self.global_rank == 0 and get_diff_sensor() is not None:
+            get_diff_sensor().log_layer(current_step=self.cache.timestep,
                                         layer_id=self.layer_id,
                                         current_out=out,
                                         current_lse=lse
