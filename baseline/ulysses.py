@@ -60,6 +60,7 @@ class CVX_UlyssesAttnProcessor:
             )
         else:
             attn_heads = attn.heads
+            
         text_seq_length = encoder_query.size(1)
         query = torch.cat([encoder_query, query], dim=1)
         key = torch.cat([encoder_key, key], dim=1)

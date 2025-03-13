@@ -130,6 +130,7 @@ class easyCache:
    
     def is_important(self, layer_id: int):
         importance = int(get_redundancy_map()[self.timestep, layer_id].item())
+        # logger.info(f"{self.timestep}-{layer_id} | {importance=} {self.threshold=}")
         return importance >= self.threshold
    
     def get_feature(self, layer_id, name):
@@ -151,7 +152,7 @@ class easyCache:
             logger.info(f"{self.timestep}-{layer_id} | Stored tensor {name} in cache. Mem={torch.cuda.memory_allocated()}")
     
     def clear(self):
-        logger.warning("============== Clear oCache =================")
+        logger.warning("============== Clear easyCache =================")
         self.cache.clear()
     
     def update_timestep(self, timestep: int):

@@ -152,7 +152,12 @@ def generate_parallel_groups(world_size: int, do_cfg_guidance: bool = True, spar
     
     if isinstance(sparse_type, List):
         stride_list = sparse_type
-    else:
+    elif sparse_type=='full':
+        if do_cfg_guidance:
+          stride_list = [world_size // 2]
+        else:
+          stride_list = [world_size]
+    elif sparse_type=='sequential':
         stride_list = [1]
     
       

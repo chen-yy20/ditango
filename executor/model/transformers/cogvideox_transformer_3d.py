@@ -106,10 +106,12 @@ class CogVideoXBlock(nn.Module):
         self.layer_id = layer_id
         self.norm1 = CogVideoXLayerNormZero(time_embed_dim, dim, norm_elementwise_affine, norm_eps, bias=True)
         if args.use_ulysses:
-            logger.warning("======= You are using baseline Ulysses Attention instead of DiTango Attention. =========")
+            if layer_id == 0:
+                logger.warning("======= You are using baseline Ulysses Attention instead of DiTango Attention. =========")
             attn_processor = CVX_UlyssesAttnProcessor(layer_id)
         elif args.use_distrifusion:
-            logger.warning("======= You are using baseline DistriFusion Attention instead of DiTango Attention. =========")
+            if layer_id == 0:
+                logger.warning("======= You are using baseline DistriFusion Attention instead of DiTango Attention. =========")
             attn_processor = CVX_DistriFusion_AttnProcessor(layer_id)
         else:
             attn_processor = CVX_oCacheAttnProcessor(layer_id)
@@ -151,16 +153,26 @@ class CogVideoXBlock(nn.Module):
         )
 
         # attention
-        attn_hidden_states, attn_encoder_hidden_states = self.attn1(
-            hidden_states=norm_hidden_states,
-            encoder_hidden_states=norm_encoder_hidden_states,
-            image_rotary_emb=image_rotary_emb,
-        )
-        # get_cache().store('attn', self.layer_id, attn_hidden_states)
-        # get_cache().store('attn_encoder', self.layer_id, attn_encoder_hidden_states)
-        # get_cache().print_status()
-        # logger.debug(f"{attn_hidden_states.shape=} {attn_encoder_hidden_states.shape=}")
-        # exit()
+        if args.use_easy_cache:
+            easyCache = get_cache()
+            if not easyCache.is_important(self.layer_id):
+                attn_hidden_states = easyCache.get_feature(self.layer_id, name="attn")
+                attn_encoder_hidden_states = easyCache.get_feature(self.layer_id, name="attn_encoder")
+                logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn_hidden_states.shape=} {attn_encoder_hidden_states.shape=}")
+            else:
+                attn_hidden_states, attn_encoder_hidden_states = self.attn1(
+                    hidden_states=norm_hidden_states,
+                    encoder_hidden_states=norm_encoder_hidden_states,
+                    image_rotary_emb=image_rotary_emb,
+                )
+                easyCache.store_feature(self.layer_id, name="attn", feature=attn_hidden_states)
+                easyCache.store_feature(self.layer_id, name="attn_encoder", feature=attn_encoder_hidden_states)
+        else:
+            attn_hidden_states, attn_encoder_hidden_states = self.attn1(
+                hidden_states=norm_hidden_states,
+                encoder_hidden_states=norm_encoder_hidden_states,
+                image_rotary_emb=image_rotary_emb,
+            )
 
         hidden_states = hidden_states + gate_msa * attn_hidden_states
         encoder_hidden_states = encoder_hidden_states + enc_gate_msa * attn_encoder_hidden_states

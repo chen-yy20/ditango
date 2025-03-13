@@ -94,16 +94,23 @@ class oCache:
 # Global variable and thread lock
 _GLOBAL_KV_CACHE: Optional[Union[oCache, easyCache, DistriFusionKVCache]] = None
 
-def init_cache(num_timesteps, num_layers, threshold = None) -> Union[oCache, easyCache, DistriFusionKVCache]:
+def init_cache(args) -> Union[oCache, easyCache, DistriFusionKVCache]:
     """Initialize or reinitialize the global KV cache"""
     global _GLOBAL_KV_CACHE
     assert get_redundancy_map() is not None, "Stride map must be initialized before init_cache()"
     if args.use_easy_cache:
-        _GLOBAL_KV_CACHE = easyCache(num_timesteps, num_layers, threshold)
+        logger.warning(f"====== You are using baseline easyCache instead of DiTango Cache, threshold={args.cache_threshold}======")
+        assert args.cache_threshold is not None, "You should set '--cache-threshold' for easyCache baseline "
+        _GLOBAL_KV_CACHE = easyCache(args.num_inference_steps, args.num_layers, args.cache_threshold)
     elif args.use_distrifusion:
+        logger.warning(f"====== You are using baseline DistriFusion_KVCache instead of DiTango Cache======")
         _GLOBAL_KV_CACHE = DistriFusionKVCache()
     else:
-        _GLOBAL_KV_CACHE = oCache(num_timesteps, num_layers)
+        if args.rank == 0:
+            logger.info(f"====== Init DiTango Cache======")
+        _GLOBAL_KV_CACHE = oCache(args.num_inference_steps, args.num_layers)
+    if args.rank == 0:
+        logger.info("====== Finished Init Cache======")
     return _GLOBAL_KV_CACHE
 
 def get_cache() -> Optional[Union[oCache, easyCache, DistriFusionKVCache]]:
@@ -111,6 +118,9 @@ def get_cache() -> Optional[Union[oCache, easyCache, DistriFusionKVCache]]:
     if _GLOBAL_KV_CACHE is None:
         raise RuntimeError("KV cache not initialized. Call init_cache() first.")
     return _GLOBAL_KV_CACHE
+
+def exist_oCache():
+    return isinstance(_GLOBAL_KV_CACHE, oCache)
 
 def exist_cache():
     """Check if the global KV cache exists"""

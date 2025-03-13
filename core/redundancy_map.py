@@ -3,10 +3,10 @@ import numpy as np
 from typing import List, Optional, Dict, Tuple
 
 import torch.distributed
-from . import get_usp_group
+from .parallel_state import get_usp_group
 
 class StrideMap:
-    def __init__(self, num_timesteps: int = 50, num_layers: int = 30):
+    def __init__(self, args):
         """
         Initialize StrideMap
         
@@ -15,8 +15,8 @@ class StrideMap:
             num_layers: Number of transformer layers 
             base_weight: Base weight value to initialize the map
         """
-        self.num_timesteps = num_timesteps
-        self.num_layers = num_layers
+        self.num_timesteps = args.num_inference_steps
+        self.num_layers = args.num_layers
         self.base_weight = get_usp_group().world_size
         self.redundancy_map = self._init_map()
 
@@ -67,6 +67,13 @@ class StrideMap:
         self.set_pattern_for_row(timestep_indices[0], [], [self.base_weight])
         for idx in timestep_indices[1:]:
             self.set_pattern_for_row(idx, split_list, pattern_list)
+            
+    def set_full_stride_for_rows(self, timestep_indices):
+        if isinstance(timestep_indices, range):
+            timestep_indices = list(timestep_indices)
+        self.set_pattern_for_row(timestep_indices[0], [], [self.base_weight])
+        for idx in timestep_indices[1:]:
+            self.set_pattern_for_row(idx, [], [self.base_weight])
     
     def get_map(self) -> torch.Tensor:
         """Return the stride map tensor"""
@@ -94,18 +101,17 @@ def print_redundancy_map(logger=None):
     
     if torch.distributed.get_rank()==0:
         if logger:
-            logger.debug(f"redundancy_map:\n{formatted_output}")
+            logger.info(f"===== DiTango Redundancy Map =====\n{formatted_output}\n=================================")
         else:
-            print(f"redundancy_map:\n{formatted_output}", flush=True)
+            print(f"===== DiTango Redundancy Map =====\n{formatted_output}\n=================================", flush=True)
 
 _redundancy_map: Optional[torch.Tensor] = None
 def init_redundancy_map(
-    num_timesteps: int,
-    num_layers: int,
+    args
 ):
   global _redundancy_map
   assert _redundancy_map is None, ("stride map is already initialized")
-  map = StrideMap(num_timesteps, num_layers)
+  map = StrideMap(args)
   _redundancy_map = map
   return map
   

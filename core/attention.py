@@ -4,7 +4,7 @@ import torch.distributed
 import torch.nn.functional as F
 from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
 from .group_coordinate import GroupCoordinator
-from .feature_cache import get_cache, exist_cache
+from .feature_cache import get_cache, exist_oCache
 from ..logger import init_logger
 from ..timer import get_timer
 from ..diff_sensor import get_diff_sensor
@@ -78,7 +78,7 @@ class oAttention:
         self.layer_id = layer_id
         self.target_block_id = self.isp_rank // self.isp_size
         self.cache = None
-        if exist_cache(): 
+        if exist_oCache(): 
             self.cache = get_cache()
         self.target_block_id = -1
         

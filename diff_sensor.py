@@ -86,6 +86,7 @@ def init_diff_sensor(log_file: str = "layer_log.csv", clear_existing: bool = Tru
     :param log_file: 日志文件路径
     :param clear_existing: 是否清空已存在的文件内容
     """
+    print(f"================= Using Redundancy sensor! Inference process would be slow down! ============", flush=True)
     LayerWiseLogger(log_file=log_file, clear_existing=clear_existing)
 
 # 使用示例 -------------------------------------------------------------------

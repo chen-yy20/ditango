@@ -13,7 +13,8 @@ def parse_args():
                         help='Path to model checkpoint')
     parser.add_argument('--output-fn', '-o', type=str, default='output',
                         help='Output directory for generated videos')
-    
+    parser.add_argument('--num-layers', type=int, default=42,
+                        help='layer num of the model')
     # 生成参数
     parser.add_argument('--prompt', type=str, default='Sunset over the sea.',
                         help='Text prompt for video generation')
@@ -47,6 +48,8 @@ def parse_args():
                         help='Number of GPUs to use')
     parser.add_argument('--node', type=str, default=None,
                         help='Node to use for distributed training')
+    parser.add_argument('--do-cfg-parallel', action='store_true',
+                        help='enable cfg parallel')
     
     # 用于Baseline实验
     parser.add_argument('--use-ulysses', action='store_true',
@@ -57,7 +60,7 @@ def parse_args():
     # 缓存和优化参数
     parser.add_argument('--use-easy-cache', action='store_true',
                         help='evaluate easyCache baseline')
-    parser.add_argument('--cache-threshold', type=int, default=4,
+    parser.add_argument('--cache-threshold', type=int, default=None,
                         help='Threshold for feature caching')
     
     # 环境变量解析
@@ -98,3 +101,17 @@ def get_args():
     if args is None:
         args = init_args()
     return args
+
+def print_args(args):
+    """
+    Dynamically print all arguments using a for-loop.
+    Only print on rank 0.
+    """
+    if args.rank != 0:
+        return
+
+    print("\n===== DiTango Argument List =====", flush=True)
+    for arg in vars(args):
+        value = getattr(args, arg)
+        print(f"{arg}: {value}", flush=True)
+    print("\n=================================", flush=True)
