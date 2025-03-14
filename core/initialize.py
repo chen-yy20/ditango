@@ -12,8 +12,8 @@ logger = init_logger(__name__)
 
 def init_ditango(
     timestep_indices: List = [], 
-    split_list: List = None, 
-    pattern_list: List = None,
+    split_list: List = [], 
+    pattern_list: List = [],
     use_diff_sensor: bool = False,
     use_timer: bool = False,
 ):

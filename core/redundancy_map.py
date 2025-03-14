@@ -54,7 +54,7 @@ class StrideMap:
         assert pattern_list[-1] <= self.base_weight, f"isp size {pattern_list[-1]} should be less than osp size {self.base_weight}"
         self.redundancy_map[row_idx, split_list[-1]:] = pattern_list[-1]
         
-    def set_pattern_for_rows(self, timestep_indices, split_list: List = None, pattern_list: List = None):
+    def set_pattern_for_rows(self, timestep_indices, split_list: List = [], pattern_list: List = []):
         """
         Set pattern for multiple rows specified by indices
         
@@ -62,6 +62,8 @@ class StrideMap:
             timestep_indices: List of row indices or range object
             pattern: Tuple of (left_value, middle_value, left_value)
         """
+        if len(timestep_indices) == 0 or len(pattern_list) == 0:
+            return
         if isinstance(timestep_indices, range):
             timestep_indices = list(timestep_indices)
         self.set_pattern_for_row(timestep_indices[0], [], [self.base_weight])

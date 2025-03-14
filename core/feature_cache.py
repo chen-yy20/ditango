@@ -80,8 +80,8 @@ class oCache:
             
             self.out_cache[layer_id][block_id] = out
             self.lse_cache[layer_id][block_id] = lse
-            if dist.get_rank()==0:
-                logger.info(f"{self.timestep}-{layer_id} | Stored {block_id} in cache. Mem={torch.cuda.memory_allocated()}")
+            # if dist.get_rank()==0:
+            #     logger.info(f"{self.timestep}-{layer_id} | Stored {block_id} in cache. Mem={torch.cuda.memory_allocated()}")
     
     def clear(self):
         logger.warning("============== Clear oCache =================")

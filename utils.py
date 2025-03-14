@@ -1,9 +1,48 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
 from PIL import Image
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 
 _PADDING_DICT: Dict[str, List[int]] = {}
+
+def _update_out_and_lse(
+    out: torch.Tensor,
+    lse: torch.Tensor,
+    block_out: torch.Tensor,
+    block_lse: torch.Tensor,
+  ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+    block_out = block_out.to(torch.float32)
+    block_lse = block_lse.transpose(-2, -1).unsqueeze(dim=-1)
+
+    # new_lse = lse + torch.log(1 + torch.exp(block_lse - lse))
+    # torch.exp(lse - new_lse) * out + torch.exp(block_lse - new_lse) * block_out
+    # For additional context and discussion, please refer to:
+    # https://github.com/zhuzilin/ring-flash-attention/pull/34#issuecomment-2076126795
+    out = out - F.sigmoid(block_lse - lse) * (out - block_out)
+    lse = lse - F.logsigmoid(lse - block_lse)
+    return out, lse
+
+def update_out_and_lse(
+    out: Optional[torch.Tensor],
+    lse: Optional[torch.Tensor],
+    block_out: torch.Tensor,
+    block_lse: torch.Tensor,
+    slice_=None,
+  ) -> Tuple[torch.Tensor, torch.Tensor]:
+    if out is None:
+      if slice_ is not None:
+        raise RuntimeError("first update_out_and_lse should not pass slice_ args")
+      out = block_out.to(torch.float32)
+      lse = block_lse.transpose(-2, -1).unsqueeze(dim=-1)
+    elif slice_ is not None:
+      slice_out, slice_lse = out[slice_], lse[slice_]
+      slice_out, slice_lse = _update_out_and_lse(slice_out, slice_lse, block_out, block_lse)
+      out[slice_], lse[slice_] = slice_out, slice_lse
+    else:
+      out, lse = _update_out_and_lse(out, lse, block_out, block_lse)
+    return out, lse
 
 def split_tensor_uneven(tensor: torch.Tensor, world_size: int, dim: int = 1, tensor_name: Optional[str] = None) -> List[torch.Tensor]:
     """Split tensor with padding to ensure equal sizes across all ranks.
@@ -105,3 +144,5 @@ def save_hwc_tensor(tensor, save_path):
     # 转PIL并保存
     img = Image.fromarray(img)
     img.save(save_path)
+
+
