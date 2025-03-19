@@ -7,12 +7,10 @@ import numpy as np
 import torch.distributed as dist
 
 from .redundancy_map import get_redundancy_map
-from .arguments import get_args
 from ..baseline.cache import easyCache, DistriFusionKVCache
 from ..logger import init_logger
 
 logger = init_logger(__name__)
-args = get_args()
         
 class oCache:
     

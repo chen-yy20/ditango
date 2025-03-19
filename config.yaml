@@ -1,0 +1,29 @@
+# DiTango Configuration
+
+# Basic parameters
+model-type: hunyuan
+output-fn: /home/fit/zhaijd/cyy/ditango_sc25/HunyuanVideo/result/
+tag: test
+
+# Generation parameters
+seed: 42
+num-layers: 60
+num-inference-steps: 50
+
+# Performance testing parameters
+warmup: 0
+repeat: 2
+enable-timing: false
+
+# Distributed parameters
+gpus: null
+node: null
+do-cfg-parallel: false
+
+# Baseline experiment parameters
+use-ulysses: false
+use-distrifusion: false
+
+# Cache and optimization parameters
+use-easy-cache: true
+cache-threshold: 2

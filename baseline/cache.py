@@ -5,6 +5,7 @@ import torch.distributed as dist
 from ..core.group_coordinate import  GroupCoordinator
 from ..core.redundancy_map import get_redundancy_map
 from ..core.parallel_state import get_usp_group
+from ..core.arguments import get_config
 from ..logger import init_logger
 
 logger = init_logger(__name__)
@@ -126,12 +127,20 @@ class easyCache:
        self.num_timesteps = num_timesteps
        self.threshold = threshold
        self.cache = {}
+       self.total_steps = get_config().num_inference_steps
        
    
     def is_important(self, layer_id: int):
         importance = int(get_redundancy_map()[self.timestep, layer_id].item())
         # logger.info(f"{self.timestep}-{layer_id} | {importance=} {self.threshold=}")
-        return importance >= self.threshold
+        return importance > self.threshold
+    
+    def should_cache(self, layer_id: int):
+        if self.timestep == self.total_steps -1:
+            return False
+        else:
+            next_step_redundancy = int(get_redundancy_map()[self.timestep + 1, layer_id].item())
+            return next_step_redundancy <= self.threshold # will skip
    
     def get_feature(self, layer_id, name):
         if name not in self.cache.keys():
@@ -158,3 +167,6 @@ class easyCache:
     def update_timestep(self, timestep: int):
         """Update current timestep"""
         self.timestep = timestep
+        if timestep == self.total_steps -1 or timestep == 0: 
+            self.clear()
+        

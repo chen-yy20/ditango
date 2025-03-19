@@ -1,117 +1,139 @@
 # arguments.py
 import os
-import argparse
+import yaml
+from pathlib import Path
+import copy
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Video generation model arguments")
-    
-    # 基本参数
-    parser.add_argument('--model-type', type=str, default='cogvideox',
-                        choices=['cogvideox', 'mochi', 'opensora', 'hunyuan', 'latte'],
-                        help='Model type to use')
-    parser.add_argument('--path', type=str, default='THUDM/CogVideoX-5b',
-                        help='Path to model checkpoint')
-    parser.add_argument('--output-fn', '-o', type=str, default='output',
-                        help='Output directory for generated videos')
-    parser.add_argument('--num-layers', type=int, default=42,
-                        help='layer num of the model')
-    # 生成参数
-    parser.add_argument('--prompt', type=str, default='Sunset over the sea.',
-                        help='Text prompt for video generation')
-    parser.add_argument('--prompt-list', type=str, nargs='+', 
-                        help='List of prompts for batch generation')
-    parser.add_argument('--height', type=int, default=480, 
-                        help='Height of generated video')
-    parser.add_argument('--width', type=int, default=720, 
-                        help='Width of generated video')
-    parser.add_argument('--frames', type=int, default=48, 
-                        help='Number of frames to generate')
-    parser.add_argument('--num-inference-steps', type=int, default=50, 
-                        help='Number of inference steps')
-    parser.add_argument('--guidance-scale', type=float, default=6.0, 
-                        help='Guidance scale for classifier-free guidance')
-    parser.add_argument('--seed', type=int, default=42, 
-                        help='Random seed for generation')
-    
-    # 性能测试参数
-    parser.add_argument('--warmup', type=int, default=0,
-                        help='Number of warmup runs before benchmarking')
-    parser.add_argument('--repeat', type=int, default=2,
-                        help='Number of repeat runs for benchmarking')
-    parser.add_argument('--enable-timing', action='store_true',
-                        help='Enable detailed timing statistics')
-    parser.add_argument('--tag', type=str, default='test',
-                        help='Tag for the experiment')
-    
-    # 分布式参数
-    parser.add_argument('--gpus', type=int, default=None,
-                        help='Number of GPUs to use')
-    parser.add_argument('--node', type=str, default=None,
-                        help='Node to use for distributed training')
-    parser.add_argument('--do-cfg-parallel', action='store_true',
-                        help='enable cfg parallel')
-    
-    # 用于Baseline实验
-    parser.add_argument('--use-ulysses', action='store_true',
-                        help='evaluate ulysses baseline')
-    parser.add_argument('--use-distrifusion', action='store_true',
-                        help='evaluate ulysses baseline')
-    
-    # 缓存和优化参数
-    parser.add_argument('--use-easy-cache', action='store_true',
-                        help='evaluate easyCache baseline')
-    parser.add_argument('--cache-threshold', type=int, default=None,
-                        help='Threshold for feature caching')
-    
-    # 环境变量解析
-    args = parser.parse_args()
-    
-    # 从环境变量获取分布式训练信息
-    args.world_size = int(os.getenv("WORLD_SIZE", "1"))
-    args.rank = int(os.getenv("RANK", "0"))
-    args.local_rank = int(os.getenv("LOCAL_RANK", "0"))
-    args.tag = os.getenv("TAG", args.tag)
-    
-    # 如果未提供prompt_list但提供了prompt，使用单个prompt
-    if args.prompt_list is None and args.prompt:
-        args.prompt_list = [args.prompt]
-    
-    # 如果未提供prompt_list，使用默认prompt
-    if args.prompt_list is None:
-        args.prompt_list = [
-            "A playful black Labrador, adorned in a vibrant pumpkin-themed Halloween costume, frolics in a sunlit autumn garden, surrounded by fallen leaves.",
-            "A cat walks on the grass, realistic style.",
-            "Sun set over the sea"
-        ]
-    
-    return args
+class DiTangoConfig:
+    """Configuration class to manage DiTango system parameters"""
+    def __init__(self, config_path=None):
+        """
+        Initialize configuration from file
+        
+        Args:
+            config_path: Path to YAML config file
+        """
+        # Default configuration
+        self.config = {
+            # Basic parameters
+            'model_type': 'cogvideox',
+            'output_fn': 'output',
+            'tag': 'test',
+            
+            # Generation parameters
+            'num_layers': 42,
+            'num_inference_steps': 50,
+            'seed': 42,
+            
+            # Performance testing parameters
+            'warmup': 0,
+            'repeat': 2,
+            'enable_timing': False,
 
-# 全局参数对象
-args = None
+            # Distributed parameters
+            'gpus': None,
+            'node': None,
+            'do_cfg_parallel': False,
+            
+            # Baseline experiment parameters
+            'use_ulysses': False,
+            'use_distrifusion': False,
+            
+            # Cache and optimization parameters
+            'use_easy_cache': False,
+            'cache_threshold': None,
+        }
+        
+        # Load from config file if provided
+        if config_path is not None:
+            self.load_from_file(config_path)
+        
+        # Process environment variables for distributed training
+        self.process_env_vars()
+        
+    
+    def load_from_file(self, config_path):
+        """Load configuration from YAML file"""
+        config_path = Path(config_path)
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                file_config = yaml.safe_load(f)
+                # Update config with file values (converting dashes to underscores)
+                for key, value in file_config.items():
+                    # Convert dash-style keys to underscore_style
+                    updated_key = key.replace('-', '_')
+                    self.config[updated_key] = value
+        else:
+            print(f"Warning: Config file {config_path} not found. Using default values.")
+    
+    def process_env_vars(self):
+        """Process environment variables for distributed settings"""
+        self.config['world_size'] = int(os.getenv("WORLD_SIZE", "1"))
+        self.config['rank'] = int(os.getenv("RANK", "0"))
+        self.config['local_rank'] = int(os.getenv("LOCAL_RANK", "0"))
+        self.config['tag'] = os.getenv("TAG", self.config['tag'])
+    
+    
+    def __getattr__(self, name):
+        """Allow attribute-style access to configuration values"""
+        if name in self.config:
+            return self.config[name]
+        raise AttributeError(f"'DiTangoConfig' object has no attribute '{name}'")
+    
+    def __setattr__(self, name, value):
+        """Allow attribute-style setting of configuration values"""
+        if name == 'config':
+            super().__setattr__(name, value)
+        else:
+            self.config[name] = value
+    
+    def to_dict(self):
+        """Convert configuration to dictionary"""
+        return copy.deepcopy(self.config)
+    
+    def save_to_file(self, file_path):
+        """Save current configuration to YAML file"""
+        with open(file_path, 'w') as f:
+            yaml.dump(self.config, f, default_flow_style=False)
 
-def init_args():
-    """初始化全局参数对象"""
-    global args
-    args = parse_args()
-    return args
+# Global configuration object
+DITANGO_CONFIG = None
 
-def get_args():
-    """获取全局参数对象，如果未初始化则初始化"""
-    global args
-    if args is None:
-        args = init_args()
-    return args
-
-def print_args(args):
+def init_config(config_path):
     """
-    Dynamically print all arguments using a for-loop.
-    Only print on rank 0.
+    Initialize global configuration object from config file
+    
+    Args:
+        config_path: Path to YAML configuration file
+    
+    Returns:
+        DiTangoConfig object
     """
-    if args.rank != 0:
-        return
+    global DITANGO_CONFIG
+    DITANGO_CONFIG = DiTangoConfig(config_path=config_path)
+    return DITANGO_CONFIG
 
-    print("\n===== DiTango Argument List =====", flush=True)
-    for arg in vars(args):
-        value = getattr(args, arg)
-        print(f"{arg}: {value}", flush=True)
+def get_config():
+    """
+    Get global configuration object
+    
+    Returns:
+        DiTangoConfig object or None if not initialized
+    """
+    global DITANGO_CONFIG
+    return DITANGO_CONFIG
+
+def print_config():
+    """
+    Print all configuration parameters
+    Only print on rank 0
+    
+    Args:
+        config: DiTangoConfig object
+    """
+    config = get_config()
+
+    print("\n===== DiTango Configuration =====", flush=True)
+    for key, value in config.to_dict().items():
+        print(f"{key}: {value}", flush=True)
     print("\n=================================", flush=True)

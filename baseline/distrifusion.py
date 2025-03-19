@@ -8,7 +8,7 @@ from diffusers.models.embeddings import apply_rotary_emb
 import torch.distributed as dist
 
 from .cache import DistriFusionKVCache
-from ditango.core.arguments import get_args
+from ditango.core.arguments import get_config
 from ditango.core.parallel_state import get_usp_group, get_isp_group, get_osp_group
 from ditango.core.feature_cache import get_cache
 from ditango.core.redundancy_map import get_redundancy_map
@@ -17,10 +17,10 @@ from ditango.logger import init_logger
 import math
 
 logger = init_logger(__name__)
-args = get_args()
 
 class CVX_DistriFusion_AttnProcessor:
     def __init__(self, layer_id):
+        args = get_config()
         assert args.use_distrifusion, "This is Distrifusion Attention Processor, set '--use-distrifusion' to enable it."
         self.layer_id = layer_id
 

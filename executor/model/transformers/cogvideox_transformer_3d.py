@@ -31,7 +31,7 @@ from diffusers.models.normalization import AdaLayerNorm, CogVideoXLayerNormZero
 
 from ditango.core.parallel_state import get_usp_group, get_cfg_group
 from ditango.core.feature_cache import get_cache
-from ditango.core.arguments import get_args
+from ditango.core.arguments import get_config
 from ditango.executor.utils import split_tensor_uneven, remove_padding_after_gather
 from ditango.logger import init_logger
 from ditango.timer import get_timer
@@ -42,7 +42,7 @@ from ditango.baseline.distrifusion import CVX_DistriFusion_AttnProcessor
 # from ditango.executor.model.attention_processor import Ulysses_CogVideoXAttnProcessor2_0, FusedCogVideoXAttnProcessor2_0
 
 logger = init_logger(__name__)    # pylint: disable=invalid-name
-args = get_args()
+args = get_config()
 
 
 use_std = False

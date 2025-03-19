@@ -1,7 +1,8 @@
+import torch
 from typing import List
-
+from argparse import ArgumentParser
 from .redundancy_map import init_redundancy_map, print_redundancy_map
-from .arguments import init_args, print_args
+from .arguments import init_config, print_config
 from .feature_cache import init_cache
 from .parallel_state import init_distributed_environment, init_model_parallel, get_world_group, generate_parallel_groups
 from ..diff_sensor import init_diff_sensor
@@ -9,8 +10,10 @@ from ..timer import init_timer
 from ..logger import init_logger
 
 logger = init_logger(__name__)
+USE_DITANGO = False
 
 def init_ditango(
+    config_path: str = None,
     timestep_indices: List = [], 
     split_list: List = [], 
     pattern_list: List = [],
@@ -18,11 +21,12 @@ def init_ditango(
     use_timer: bool = False,
 ):
     # 1. init arguments
-    args = init_args()
-    print_args(args)
+    args = init_config(config_path)
+    print_config()
     
     # 2. init parallel
     init_distributed_environment(world_size=args.world_size, rank=args.rank, local_rank=args.local_rank)
+    torch.cuda.set_device(args.local_rank)
     stride_list = sorted(set(pattern_list))
     if args.use_distrifusion:
         assert args.model_type not in ['latte', 'opensora'], f"Unsupported model type {args.model_type} for DistriFusion Baseline."
@@ -71,5 +75,10 @@ def init_ditango(
     # 5. init redundancy sensor
     if use_diff_sensor:
         init_diff_sensor(f"./exp/diff/{args.model_type}_diff.csv") 
-    
+    global USE_DITANGO
+    USE_DITANGO = True
     logger.info(f"***************************************** RANK {args.rank} - Initialized DiTango! *****************************************")
+    
+def is_ditango_initialized():
+    global USE_DITANGO
+    return USE_DITANGO

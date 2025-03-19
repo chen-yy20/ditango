@@ -8,11 +8,10 @@ import torch.distributed as dist
 from itertools import combinations
 
 from ..core.redundancy_map import get_redundancy_map
-from ..core.arguments import get_args
+from ..core.arguments import get_config
 from ..logger import init_logger
 
 logger = init_logger(__name__)
-args = get_args()
         
 class proCache:
     def __init__(self):
