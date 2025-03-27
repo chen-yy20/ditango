@@ -3,6 +3,7 @@ import os
 import yaml
 from pathlib import Path
 import copy
+import torch.distributed as dist
 
 class DiTangoConfig:
     """Configuration class to manage DiTango system parameters"""
@@ -16,7 +17,7 @@ class DiTangoConfig:
         # Default configuration
         self.config = {
             # Basic parameters
-            'model_type': 'cogvideox',
+            'model_name': 'cogvideox1.5-5b',
             'output_fn': 'output',
             'tag': 'test',
             
@@ -64,7 +65,7 @@ class DiTangoConfig:
                     updated_key = key.replace('-', '_')
                     self.config[updated_key] = value
         else:
-            print(f"Warning: Config file {config_path} not found. Using default values.")
+            print(f"Warning: Config file {config_path} for DiTango not found. Using default values.")
     
     def process_env_vars(self):
         """Process environment variables for distributed settings"""
@@ -132,8 +133,9 @@ def print_config():
         config: DiTangoConfig object
     """
     config = get_config()
-
-    print("\n===== DiTango Configuration =====", flush=True)
-    for key, value in config.to_dict().items():
-        print(f"{key}: {value}", flush=True)
-    print("\n=================================", flush=True)
+    rank = 0 if not dist.is_initialized() else dist.get_rank()
+    if rank == 0:
+        print("\n===== DiTango Configuration =====", flush=True)
+        for key, value in config.to_dict().items():
+            print(f"{key}: {value}", flush=True)
+        print("\n=================================", flush=True)

@@ -3,12 +3,12 @@ import numpy as np
 from typing import List, Optional, Dict, Tuple
 
 import torch.distributed
-from .parallel_state import get_usp_group
+from ..core.parallel_state import get_usp_group
 
-class StrideMap:
+class proMap:
     def __init__(self, args):
         """
-        Initialize StrideMap
+        Initialize proMap
         
         Args:
             num_timesteps: Number of diffusion timesteps
@@ -66,8 +66,8 @@ class StrideMap:
             return
         if isinstance(timestep_indices, range):
             timestep_indices = list(timestep_indices)
-        self.set_pattern_for_row(timestep_indices[0], [], [self.base_weight])
-        for idx in timestep_indices[1:]:
+
+        for idx in timestep_indices:
             self.set_pattern_for_row(idx, split_list, pattern_list)
             
     def set_full_stride_for_rows(self, timestep_indices):
@@ -114,7 +114,7 @@ def init_redundancy_map(
 ):
   global _redundancy_map
   assert _redundancy_map is None, ("stride map is already initialized")
-  map = StrideMap(args)
+  map = proMap(args)
   _redundancy_map = map
   return map
   

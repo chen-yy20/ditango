@@ -26,7 +26,7 @@ def nvtx_range(name, domain="CUSTOM"):
 
 
 logger = init_logger(__name__)
-gpus_per_node = 8
+gpus_per_node = 4
 
 
 def _update_out_and_lse(
@@ -80,7 +80,6 @@ class oAttention:
         self.cache = None
         if exist_oCache(): 
             self.cache = get_cache()
-        self.target_block_id = -1
         
         self.use_overlap_ring = True
         
@@ -127,8 +126,6 @@ class oAttention:
         value: torch.Tensor,
     ):
         # Note: input size should be (b, s, a, d)
-        block_shape = key.shape
-        dtype = key.dtype
         next_k, next_v = None, None
         out, lse = None, None
         
@@ -147,8 +144,8 @@ class oAttention:
             assert next_isp_stride == self.isp_size or curr_isp_stride == self.isp_size or next_isp_stride == curr_isp_stride
             
             if next_isp_stride == self.isp_size:
-                total_block_num = self.isp_size // curr_isp_stride
-                q_block_id = self.isp_rank // curr_isp_stride
+                total_block_num = self.isp_size // curr_isp_stride # 刷新
+                q_block_id = self.isp_rank // curr_isp_stride 
             elif next_isp_stride < self.isp_size:
                 total_block_num = self.isp_size // next_isp_stride
                 q_block_id = self.isp_rank // next_isp_stride
@@ -162,13 +159,9 @@ class oAttention:
                     cache_out, cache_lse = self.cache.get_block(self.layer_id, cached_block_id)
                     if cache_out is not None:
                         out, lse = update_out_and_lse(out, lse, cache_out, cache_lse)
-                    # else:
-                    #     if self.global_rank == 0 and self.layer_id == 15:
-                    #         logger.error(f"{self.cache.timestep}-{self.layer_id} | trying to get {cached_block_id=} but found None.")
                         
             # 下一轮有几个block，哪些要算，哪些要取
             self.cache.purge_cache(self.layer_id, self.target_block_id, total_block_num)
-            
         # ================== get first kv ======================= 
         # logger.debug(f"{self.cache.timestep}-{self.layer_id} | {self.isp_rank=} {self.target_block_id=} {q_block_id=}")
         if self.cache is not None and self.target_block_id != q_block_id:
@@ -199,8 +192,6 @@ class oAttention:
             # ============ overlap part end ==============
             key, value = self.async_ring_p2p_wait_and_update((first_key, first_value))
             
-            # logger.debug(f"{self.cache.timestep}-{self.layer_id} | Successfully get target block {self.target_block_id}'s kv |  {recv_rank} -> rank:{self.isp_rank} -> {send_rank}")
-        
         # ================= ISP Loop ====================
         large_ring = 1
         full_isp_stride = curr_isp_stride
@@ -209,11 +200,10 @@ class oAttention:
             large_ring = curr_isp_stride // gpus_per_node
             curr_isp_stride = gpus_per_node
             
-        q_offset = self.isp_rank // curr_isp_stride * curr_isp_stride
-        next_rank = (self.isp_rank - 1) % curr_isp_stride + q_offset
+        q_offset = self.isp_rank // curr_isp_stride * curr_isp_stride # stride小环起始chunk的id
+        large_q_offset = self.isp_rank // full_isp_stride * full_isp_stride # stride大环起始chunk的id
+        next_rank = (self.isp_rank - 1) % curr_isp_stride + q_offset # 在环内做ring
         prev_rank = (self.isp_rank + 1) % curr_isp_stride + q_offset
-        # if self.rank in [0] and self.layer_id == 20:
-        #     logger.debug(f"{cache.timestep} | ISP-{self.kv_block_id=} | {q_offset=} {prev_rank} -> rank:{self.rank} -> {next_rank}")
         fresh_out, fresh_lse = None, None
         merge_block_cnt = 0
         for inter_node_step in range(large_ring):
@@ -224,16 +214,16 @@ class oAttention:
                         src_rank=prev_rank,
                         dst_rank=next_rank,
                     )
+                    if self.cache.timestep > 4 and self.global_rank==14:
+                        logger.debug(f"{self.cache.timestep}-{self.layer_id} |IR-{self.isp_rank} | SMALL_STEP {intra_node_step} |  {prev_rank} -> rank:{self.isp_rank} -> {next_rank}")
                 elif inter_node_step + 1 != large_ring:
-                    inter_next_rank =  (self.isp_rank - gpus_per_node) % full_isp_stride
-                    inter_prev_rank = (self.isp_rank + gpus_per_node) % full_isp_stride
+                    inter_next_rank =  (self.isp_rank - gpus_per_node) % full_isp_stride + large_q_offset
+                    inter_prev_rank = (self.isp_rank + gpus_per_node) % full_isp_stride + large_q_offset
                     next_k, next_v = self.async_ring_p2p_commit(
                         (key, value),
                         src_rank=inter_prev_rank,
                         dst_rank=inter_next_rank,
                     )
-                    if self.layer_id == 0:
-                        logger.debug(f"{self.cache.timestep}-{self.layer_id} | large ring {inter_node_step} |  {inter_prev_rank} -> rank:{self.isp_rank} -> {inter_next_rank}")
                 block_out, block_lse, _  = flash_attn_func(
                         query,
                         key,
@@ -264,8 +254,8 @@ class oAttention:
                     merge_block_cnt = 0
                     self.target_block_id = (self.target_block_id + 1) % total_block_num
                     # logger.debug(f"{self.cache.timestep}-{self.layer_id} | {self.isp_rank=} {total_block_num=} , Updated {self.target_block_id=}")
-                
-        # store output and lse for analysis
+        if self.global_rank == 0 and self.cache.timestep == 0 and self.layer_id == 10:
+            logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
         if self.global_rank == 0 and get_diff_sensor() is not None:
             get_diff_sensor().log_layer(current_step=self.cache.timestep,
                                         layer_id=self.layer_id,
@@ -373,19 +363,20 @@ class oAttention:
             )
         
         # ================= ISP Loop ====================
+        large_ring = 1
         full_isp_stride = curr_isp_stride
         if curr_isp_stride > gpus_per_node and self.use_overlap_ring:
             assert curr_isp_stride % gpus_per_node == 0, f"Does not support this ISP stride {curr_isp_stride} for overlap ring strategy"
             large_ring = curr_isp_stride // gpus_per_node
             curr_isp_stride = gpus_per_node
             
-        q_offset = self.isp_rank // curr_isp_stride * curr_isp_stride
+        q_offset = self.isp_rank // curr_isp_stride * curr_isp_stride # stride小环起始chunk的id
+        large_q_offset = self.isp_rank // full_isp_stride * full_isp_stride # stride大环起始chunk的id
         next_rank = (self.isp_rank - 1) % curr_isp_stride + q_offset
         prev_rank = (self.isp_rank + 1) % curr_isp_stride + q_offset
         # if self.rank in [0] and self.layer_id == 20:
         #     logger.debug(f"{cache.timestep} | ISP-{self.kv_block_id=} | {q_offset=} {prev_rank} -> rank:{self.rank} -> {next_rank}")
         fresh_out, fresh_lse = None, None
-        large_ring = 1
         merge_block_cnt = 0
         for inter_node_step in range(large_ring):
             for intra_node_step in range(curr_isp_stride):
@@ -399,16 +390,13 @@ class oAttention:
                     
                 elif inter_node_step + 1 != large_ring:
                     
-                    inter_next_rank =  (self.isp_rank - gpus_per_node) % full_isp_stride
-                    inter_prev_rank = (self.isp_rank + gpus_per_node) % full_isp_stride
+                    inter_next_rank =  (self.isp_rank - gpus_per_node) % full_isp_stride + large_q_offset
+                    inter_prev_rank = (self.isp_rank + gpus_per_node) % full_isp_stride + large_q_offset
                     next_k, next_v, next_cu_seqlens_kv = self.async_ring_p2p_commit(
                         (key, value, cu_seqlens_kv),
                         src_rank=inter_prev_rank,
                         dst_rank=inter_next_rank
                     )
-                    
-                    if self.layer_id == 0:
-                        logger.debug(f"{self.cache.timestep}-{self.layer_id} | large ring {inter_node_step} |  {inter_prev_rank} -> rank:{self.isp_rank} -> {inter_next_rank}")
                 
                 block_out, block_lse, _  = flash_attn_varlen_func(
                         query,
@@ -436,8 +424,6 @@ class oAttention:
                     
                 # =============== update Cache ================
                 if merge_block_cnt == next_isp_stride:
-                    # if self.global_rank == 0 and self.layer_id == 15:
-                    #     logger.info(f"{self.cache.timestep}-{self.layer_id} | trying to store {self.target_block_id=}")
                     if fresh_lse is not None:
                         fresh_lse = fresh_lse.squeeze(-1).transpose(-1,-2)
                         if self.cache is not None:

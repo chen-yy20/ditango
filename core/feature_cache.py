@@ -87,7 +87,72 @@ class oCache:
     def update_timestep(self, timestep: int):
         """Update current timestep"""
         self.timestep = timestep
+    
+    def report_memory_usage(self):
+        """
+        Report detailed memory usage information including:
+        - Total number of cached blocks
+        - Size of each cached block
+        - Current GPU memory usage
+        """
+        total_blocks = 0
+        total_cache_size_bytes = 0
+        block_sizes = {}
         
+        # 收集每层缓存的块数量和大小
+        for layer_id in range(self.num_layers):
+            if self.out_cache[layer_id] is None:
+                continue
+                
+            layer_blocks = 0
+            layer_size_bytes = 0
+            
+            for block_id in range(len(self.out_cache[layer_id])):
+                out = self.out_cache[layer_id][block_id]
+                lse = self.lse_cache[layer_id][block_id]
+                
+                if out is not None:
+                    layer_blocks += 1
+                    # 计算块大小(out + lse)
+                    block_size_bytes = out.element_size() * out.nelement()
+                    if lse is not None:
+                        block_size_bytes += lse.element_size() * lse.nelement()
+                    
+                    layer_size_bytes += block_size_bytes
+                    
+                    # 记录块大小信息
+                    if f"Layer {layer_id}" not in block_sizes:
+                        block_sizes[f"Layer {layer_id}"] = []
+                    block_sizes[f"Layer {layer_id}"].append(f"Block {block_id}: {block_size_bytes / (1024 * 1024):.2f} MB")
+            
+            total_blocks += layer_blocks
+            total_cache_size_bytes += layer_size_bytes
+        
+        # 获取当前GPU内存使用情况
+        current_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # MB
+        max_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)  # MB
+        total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)  # MB
+        
+        # 缓存大小
+        total_cache_size_mb = total_cache_size_bytes / (1024 * 1024)
+        
+        # 输出报告
+        logger.info(f"===== Memory Usage Report at timestep {self.timestep} =====")
+        logger.info(f"Total cached blocks: {total_blocks}")
+        logger.info(f"Total cache size: {total_cache_size_mb:.2f} MB ({total_cache_size_bytes} bytes)")
+        logger.info(f"Cache breakdown by layer:")
+        
+        for layer, blocks in block_sizes.items():
+            layer_total = sum([float(b.split(": ")[1].split(" MB")[0]) for b in blocks])
+            logger.info(f"  {layer}: {len(blocks)} blocks, {layer_total:.2f} MB")
+            # 如果需要详细到每个块的大小，可以取消下面的注释
+            # for block_info in blocks:
+            #     logger.info(f"    {block_info}")
+        
+        logger.info(f"Current GPU memory: {current_memory:.2f} MB / {total_memory:.2f} MB ({current_memory/total_memory*100:.1f}%)")
+        logger.info(f"Peak GPU memory: {max_memory:.2f} MB / {total_memory:.2f} MB ({max_memory/total_memory*100:.1f}%)")
+        logger.info(f"Cache memory percentage: {total_cache_size_mb/current_memory*100:.1f}% of current usage")
+        logger.info("================================================")
         
 # Global variable and thread lock
 _GLOBAL_KV_CACHE: Optional[Union[oCache, easyCache, DistriFusionKVCache]] = None

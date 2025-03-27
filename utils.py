@@ -5,6 +5,17 @@ from PIL import Image
 from typing import Optional, Dict, List, Tuple
 
 _PADDING_DICT: Dict[str, List[int]] = {}
+_TIMESTEP: int = 0
+
+
+def get_timestep() -> int:
+    global _TIMESTEP
+    return _TIMESTEP
+
+def update_timestep(timestep: int) -> None:
+    global _TIMESTEP
+    _TIMESTEP = timestep
+
 
 def _update_out_and_lse(
     out: torch.Tensor,

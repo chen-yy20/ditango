@@ -1,13 +1,13 @@
 # DiTango Configuration
 
 # Basic parameters
-model-type: hunyuan
-output-fn: /home/fit/zhaijd/cyy/ditango_sc25/HunyuanVideo/result/
+model-name: cogvideox1.5-5b
+output-fn: ./result/
 tag: test
 
 # Generation parameters
 seed: 42
-num-layers: 60
+num-layers: 42
 num-inference-steps: 50
 
 # Performance testing parameters
@@ -25,5 +25,5 @@ use-ulysses: false
 use-distrifusion: false
 
 # Cache and optimization parameters
-use-easy-cache: true
+use-easy-cache: false
 cache-threshold: 2
