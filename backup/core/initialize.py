@@ -2,19 +2,24 @@ import torch
 from typing import List
 from argparse import ArgumentParser
 # from .redundancy_map import init_redundancy_map, print_redundancy_map
-from .config import init_config, print_config
+from .arguments import init_config, print_config
+from .feature_cache import init_cache
 from .parallel_state import init_distributed_environment, init_model_parallel, get_world_group, generate_parallel_groups
-from .stride_map import init_stride_map, print_stride_map
-
+from ..diff_sensor import init_diff_sensor
 from ..timer import init_timer
 from ..logger import init_logger
+from ..pro.pro_map import init_stride_map
+from ..pro.sensor import init_redundancy_sensor
 
 logger = init_logger(__name__)
 USE_DITANGO = False
 
 def init_ditango(
     config_path: str = None,
+    timestep_indices: List = [], 
+    split_list: List = [], 
     pattern_list: List = [],
+    use_diff_sensor: bool = False,
     use_timer: bool = False,
 ):
     # 1. init arguments
@@ -49,12 +54,39 @@ def init_ditango(
     
     
     # 3. init stride map
-    init_stride_map(config)
-
-    # 4. init timer
+    map = init_stride_map(config)
+    
+    # init_redundancy_sensor(
+    #     model_name=config.model_name,
+    # )
+    
+    # map.set_pattern_for_rows(
+    #     timestep_indices,
+    #     split_list,
+    #     pattern_list,
+    # )
+    # map.set_pattern_for_rows(
+    #     timestep_indices=list(range(1,46,4)),
+    #     split_list=[],
+    #     pattern_list=[8]
+    # )
+    
+    if config.use_easy_cache:
+        map.set_full_stride_for_rows(
+            timestep_indices=list(range(5,48,4))
+        )
+    
+    # print_redundancy_map(logger)
+    
+    # 4. init feature cache
+    # init_cache(config)
+    
+    # 5. init timer
     if use_timer:
         init_timer(enable=False)
-    
+    # 5. init redundancy sensor
+    if use_diff_sensor:
+        init_diff_sensor(f"./exp/diff/{config.model_name}_diff.csv") 
     global USE_DITANGO
     USE_DITANGO = True
     logger.info(f"***************************************** RANK {config.rank} - Initialized DiTango! *****************************************")

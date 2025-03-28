@@ -3,9 +3,9 @@ import torch
 import torch.distributed as dist
 
 from ..core.group_coordinate import  GroupCoordinator
-from ..core.redundancy_map import get_redundancy_map
+from ..core.stride_map import get_stride_map
 from ..core.parallel_state import get_usp_group
-from ..core.arguments import get_config
+from ..core.config import get_config
 from ..logger import init_logger
 
 logger = init_logger(__name__)
@@ -19,8 +19,7 @@ class DistriFusionKVCache:
             stride_map: Binary tensor indicating whether to cache at each timestep and layer
         """
         self.timestep = 0
-        self.stride_map = get_redundancy_map()
-        self.num_timesteps, self.num_layers = get_redundancy_map().shape
+        self.num_timesteps, self.num_layers = get_config().num_inference_steps, get_config().num_layers
         self.full_sp_size = get_usp_group().world_size
         
         # Cache structure: {layer_id: {"k": Tensor, "v": Tensor}}
@@ -30,7 +29,7 @@ class DistriFusionKVCache:
         """Check if current timestep and layer should be cached"""
         if self.timestep + 1 >= self.num_timesteps:
             return False
-        return self.stride_map[self.timestep + 1, layer_id].item() < self.full_sp_size # next step need cache
+        return get_stride_map().get_next_isp_stride(self.timestep, layer_id) < self.full_sp_size # next step need cache
     
     def is_cached(self, layer_id: int) -> bool:
         """Check if features for given layer are cached"""
@@ -131,7 +130,7 @@ class easyCache:
        
    
     def is_important(self, layer_id: int):
-        importance = int(get_redundancy_map()[self.timestep, layer_id].item())
+        importance = get_stride_map().get_curr_isp_stride(self.timestep, layer_id)
         # logger.info(f"{self.timestep}-{layer_id} | {importance=} {self.threshold=}")
         return importance > self.threshold
     
@@ -139,7 +138,7 @@ class easyCache:
         if self.timestep == self.total_steps -1:
             return False
         else:
-            next_step_redundancy = int(get_redundancy_map()[self.timestep + 1, layer_id].item())
+            next_step_redundancy = int(get_stride_map()[self.timestep + 1, layer_id].item())
             return next_step_redundancy <= self.threshold # will skip
    
     def get_feature(self, layer_id, name):

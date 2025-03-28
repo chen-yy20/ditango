@@ -3,15 +3,14 @@ from typing import Optional, Tuple, List
 import torch.distributed
 import torch.nn.functional as F
 from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
-from .group_coordinate import GroupCoordinator
-
-from .cache import proCache
-from .config import get_config
-from .stride_map import get_stride_map
-
+from ..core.group_coordinate import GroupCoordinator
 from ..logger import init_logger
 from ..timer import get_timer
+from ..diff_sensor import get_diff_sensor
+from .cache import proCache
+from ..core.config import get_config
 from ..utils import update_out_and_lse, get_timestep
+from .pro_map import get_stride_map
 
 
 logger = init_logger(__name__)

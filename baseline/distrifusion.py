@@ -8,10 +8,9 @@ from diffusers.models.embeddings import apply_rotary_emb
 import torch.distributed as dist
 
 from .cache import DistriFusionKVCache
-from ditango.core.arguments import get_config
+from ditango.core.config import get_config
 from ditango.core.parallel_state import get_usp_group, get_isp_group, get_osp_group
-from ditango.core.feature_cache import get_cache
-from ditango.core.redundancy_map import get_redundancy_map
+from ditango.core.stride_map import get_stride_map
 from ditango.utils import split_tensor_uneven
 from ditango.logger import init_logger
 import math

@@ -2,6 +2,7 @@
 
 # Basic parameters
 model-name: cogvideox1.5-5b
+ditango-base: ./ditango/
 output-fn: ./result/
 tag: test
 

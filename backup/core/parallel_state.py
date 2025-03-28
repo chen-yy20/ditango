@@ -7,7 +7,7 @@ import torch
 import torch.distributed
 
 from ditango.logger import init_logger
-from .group_coordinate import GroupCoordinator
+from . import GroupCoordinator
 
 logger = init_logger(__name__)
 

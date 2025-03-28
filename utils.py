@@ -156,4 +156,15 @@ def save_hwc_tensor(tensor, save_path):
     img = Image.fromarray(img)
     img.save(save_path)
 
+# 计算相对L1距离
+def rel_l1(new, ori) -> torch.Tensor:
+    # Calculate relative L1 distance
+    if torch.is_tensor(new) and torch.is_tensor(ori):
+        rel_l1 = ((new - ori).abs().mean() / 
+                    ori.abs().mean()).cpu().item()
+    else:
+        # Handle non-tensor case
+        rel_l1 = abs(new - ori) / abs(ori)
+    return rel_l1   
+
 

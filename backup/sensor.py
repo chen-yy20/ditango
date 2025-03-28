@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from typing import Dict, Optional, Tuple, Union, Any
 from ..logger import init_logger
-from ..core.arguments import get_config
+from ..core.config import get_config
 from ..core.parallel_state import get_usp_group
 from ..utils import get_timestep
 

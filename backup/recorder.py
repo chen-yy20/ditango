@@ -11,7 +11,7 @@ from pathlib import Path
 from ..logger import init_logger
 
 logger = init_logger(__name__)
-
+        
 class RedundancyRecorder:
     """
     记录各时间步、层的平均冗余度，以简洁易读的格式输出到单个文件

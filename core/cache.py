@@ -1,24 +1,11 @@
 from typing import Dict, Optional, Union, Tuple, List
 import torch
 
-# from ..core.redundancy_map import get_redundancy_map
 from ..logger import init_logger
 from ..utils import update_out_and_lse, get_timestep
-from .pro_map import get_redundancy_map
-from .recorder import get_redundancy_recorder
+from .stride_map import get_stride_map
 
 logger = init_logger(__name__)
-
-def rel_l1(new, ori) -> torch.Tensor:
-    # Calculate relative L1 distance
-    if torch.is_tensor(new) and torch.is_tensor(ori):
-        rel_l1 = ((new - ori).abs().mean() / 
-                    ori.abs().mean()).cpu().item()
-    else:
-        # Handle non-tensor case
-        rel_l1 = abs(new - ori) / abs(ori)
-    return rel_l1   
-        
 class proCache:
     
     def __init__(self, isp_size, layer_id):
@@ -33,7 +20,7 @@ class proCache:
         logger.info(f"proCache initialized with ISP size {self.isp_size}")
         
     def get_curr_isp_stride(self, layer_id: int):
-        isp_stride = int(get_redundancy_map()[get_timestep(), layer_id].item())
+        isp_stride = int(get_stride_map()[get_timestep(), layer_id].item())
         return isp_stride
     
     def _merge_blocks(self, new_block_num: int):
@@ -57,7 +44,7 @@ class proCache:
         self.lse_block_cache = new_lse_block_cache
         # logger.debug(f"Blocks merged successfully, New cache len {len(self.out_block_cache)}")
         
-    def update_cache_blocks(self, new_isp_stride: int):
+    def update_cache_blocks(self, new_isp_stride: int, next_target_block_id: int):
         if new_isp_stride == self.isp_size: # 全面刷新
             self.curr_isp_stride = self.isp_size
             self.curr_block_num = self.isp_size
@@ -67,13 +54,14 @@ class proCache:
             new_block_num = self.isp_size // new_isp_stride
             assert new_block_num <= self.curr_block_num, "Invalid ISP stride."
             self.curr_isp_stride = new_isp_stride
-            if new_block_num == self.curr_block_num: # 维持原状
-                return
-            else:
+            if new_block_num != self.curr_block_num:
                 # merge blocks
                 self._merge_blocks(new_block_num)
                 self.curr_block_num = new_block_num
-            
+            self.out_block_cache[next_target_block_id] = None
+            self.lse_block_cache[next_target_block_id] = None
+                
+   
    
     def get_block(self, block_id: int):
         if block_id >= len(self.out_block_cache):
@@ -83,16 +71,6 @@ class proCache:
         return cached_out, cached_lse
     
     def store_block(self, block_id, out, lse):
-        out_distance = rel_l1(out, self.out_block_cache[block_id]) if self.out_block_cache[block_id] is not None else 0
-        lse_distance = rel_l1(lse, self.lse_block_cache[block_id]) if self.lse_block_cache[block_id] is not None else 0
-        recorder = get_redundancy_recorder()
-        recorder.record_redundancy(
-            timestep=get_timestep(),
-            layer_id=self.layer_id,
-            block_id=block_id,
-            out_distance=out_distance,
-            lse_distance=lse_distance,
-        )
         self.out_block_cache[block_id] = out
         self.lse_block_cache[block_id] = lse
     

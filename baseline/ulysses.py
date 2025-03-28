@@ -9,8 +9,8 @@ import torch.distributed as dist
 
 
 from ditango.core.parallel_state import get_usp_group, get_isp_group, get_osp_group
-from ditango.core.redundancy_map import get_redundancy_map
-from ditango.core.feature_cache import get_cache, exist_cache
+from ditango.core.stride_map import get_stride_map
+# from ditango.core.cache import get_cache, exist_cache
 from ditango.logger import init_logger
 from ditango.timer import get_timer
 
