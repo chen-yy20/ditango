@@ -1,0 +1,27 @@
+=== StrideMap Configuration ===
+
+Number of timesteps: 50
+Number of layers: 42
+AutoSet round: 1
+Base weight (osp size): 8
+
+Stride divider options: [8, 4, 2, 1]
+Redundancy percentile thresholds: [20, 50, 80]%
+
+=== Divider Distribution ===
+
+Divider | Count | Percentage | Stride
+--------|-------|------------|-------
+      1 |   591 |    28.14% | 8
+      2 |   617 |    29.38% | 4
+      4 |   564 |    26.86% | 2
+      8 |   328 |    15.62% | 1
+
+=== Redundancy to Divider Mapping ===
+
+Redundancy Range | Percentile | Assigned Divider | Resulting Stride
+----------------|------------|-----------------|----------------
+0.0 - 0.040224 | 0-20% |                 8 | 1
+0.040224 - 0.065292 | 20-50% |                 4 | 2
+0.065292 - 0.132118 | 50-80% |                 2 | 4
+0.132118 - ∞ | 80-100% |                 1 | 8
