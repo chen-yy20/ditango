@@ -6,6 +6,8 @@ from .config import init_config, print_config
 from .parallel_state import init_distributed_environment, init_model_parallel, get_world_group, generate_parallel_groups
 from .stride_map import init_stride_map, print_stride_map
 
+from ditango.baseline.cache import init_fusion_cache, init_easy_cache
+
 from ..timer import init_timer
 from ..logger import init_logger
 
@@ -50,6 +52,11 @@ def init_ditango(
     
     # 3. init stride map
     init_stride_map(config)
+    
+    if config.use_distrifusion:
+        init_fusion_cache()
+    elif config.use_easy_cache:
+        init_easy_cache()
 
     # 4. init timer
     if use_timer:

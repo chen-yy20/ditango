@@ -1,0 +1,27 @@
+# DiTango Configuration
+
+# Basic parameters
+model-name: cogvideox-5b
+ditango-base: ./ditango/
+output-fn: ./result/
+tag: test
+
+# Generation parameters
+seed: 42
+num-layers: 42
+num-inference-steps: 50
+
+# Performance testing parameters
+warmup: 0
+repeat: 2
+enable-timing: false
+
+# Distributed parameters
+gpus: null
+node: null
+do-cfg-parallel: false
+
+# Baseline experiment parameters
+use-ulysses: false
+use-distrifusion: false
+use-easy-cache: false

@@ -91,20 +91,19 @@ class proAttention:
         
         # =================== 1. Update Cached blocks =================
         if self.layer_id == 0:
-                self.cache.report_cache_status(self.layer_id)
+            self.cache.report_cache_status(self.layer_id)
+            self.cache.report_memory_usage(self.layer_id)
         if curr_isp_stride == self.isp_size: # 满，刷新指针, 细粒度存储
             self.target_chunk_id = self.local_chunk_id
         else: # 不满，先更新cached block
             for i in range(total_block_num - 1):
                 cached_block_id = (target_block_id + 1 + i) % total_block_num
                 cache_out, cache_lse = self.cache.get_block(cached_block_id)
-                if self.layer_id == 0:
-                    logger.debug(f"{get_timestep()}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
+                # if self.layer_id == 0:
+                #     logger.debug(f"{get_timestep()}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
                 if cache_lse is not None:
                     if cache_lse.dim() == 4:
                         cache_lse = cache_lse.squeeze(-1).transpose(-1,-2)
-                    if self.layer_id == 0:
-                        logger.debug(f"{cache_lse.shape=}")
                     out, lse = update_out_and_lse(out, lse, cache_out, cache_lse)
                     
         
@@ -208,9 +207,9 @@ class proAttention:
                     finished_chunk_cnt = 0
                     
         # ================= 5. Cache Management =================
-        if self.layer_id == 0:
-            logger.info(f"Before merge, {next_isp_stride=}")
-            self.cache.report_cache_status(self.layer_id)
+        # if self.layer_id == 0:
+        #     logger.info(f"Before merge, {next_isp_stride=}")
+        #     self.cache.report_cache_status(self.layer_id)
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
                     

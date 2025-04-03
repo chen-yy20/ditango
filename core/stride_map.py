@@ -64,7 +64,7 @@ class StrideMap:
             return 1
         else:
             assert self.base_weight % divider == 0, f"Invalid divider {divider} for base weight {self.base_weight}"
-        return self.base_weight // divider
+        return max(self.base_weight // divider, 1)
     
     def get_next_isp_stride(self, timestep: int, layer_id: int) -> int:
         """
@@ -188,8 +188,8 @@ class StrideMap:
         prev_out = self.prev_out[layer_id]
         if prev_out is None:
             self.prev_out[layer_id] = curr_out
+            logger.info(f"T{timestep} L{layer_id} | {curr_out.shape=}, memory={torch.cuda.memory_allocated() / 1024 / 1024:.2f} MB")
             return
-        
         # Calculate relative L1 distance
         rel_l1_distance = rel_l1(curr_out, prev_out)
         self.redundancy_map[timestep, layer_id] += rel_l1_distance
@@ -647,6 +647,10 @@ def init_stride_map(args, load_map_path=None):
     stride_map = StrideMap(args)
     _stride_map = stride_map
     
+    if args.use_easy_cache:
+        print_stride_map()
+        return stride_map
+    
     # Try to load pre-computed divider map if path is provided or check default location
     if load_map_path is None:
         # Check default location
@@ -744,15 +748,15 @@ def get_stride_map() -> StrideMap:
     return _stride_map
 
 prompt_list = [
-  "A video of a cat playing with a ball",
-  "A playful black Labrador, adorned in a vibrant pumpkin-themed Halloween costume, frolics in a sunlit autumn garden, surrounded by fallen leaves. The dog's costume features a bright orange body with a green leafy collar, perfectly complementing its shiny black fur. As it bounds joyfully across the lawn, the sunlight catches the costume's fabric, creating a delightful contrast with the dog's dark coat. The scene captures the essence of autumn festivities, with the dog's wagging tail and playful demeanor adding to the cheerful atmosphere. Nearby, carved pumpkins and scattered leaves enhance the festive setting.",
+  # "A video of a cat playing with a ball",
+  # "A playful black Labrador, adorned in a vibrant pumpkin-themed Halloween costume, frolics in a sunlit autumn garden, surrounded by fallen leaves. The dog's costume features a bright orange body with a green leafy collar, perfectly complementing its shiny black fur. As it bounds joyfully across the lawn, the sunlight catches the costume's fabric, creating a delightful contrast with the dog's dark coat. The scene captures the essence of autumn festivities, with the dog's wagging tail and playful demeanor adding to the cheerful atmosphere. Nearby, carved pumpkins and scattered leaves enhance the festive setting.",
   "A charming boat glides gracefully along the serene Seine River, its sails catching a gentle breeze, while the iconic Eiffel Tower stands majestically in the background. The scene is rendered in rich, textured oil paints, capturing the warm hues of a late afternoon sun casting a golden glow over the water. The boat, with its elegant design and vibrant colors, contrasts beautifully with the soft, impressionistic strokes of the surrounding landscape. The Eiffel Tower, painted in delicate detail, rises above the Parisian skyline, its iron latticework shimmering in the light. The riverbanks are adorned with lush greenery and quaint buildings, their reflections dancing on the water's surface, creating a harmonious blend of nature and architecture. The overall composition exudes a sense of tranquility and timeless beauty, inviting viewers to immerse themselves in the idyllic Parisian scene.",
   # "A cat walks on the grass, realistic style.",
   # "A little girl is riding a bicycle at high speed. Focused, detailed, realistic.",
   # "Sun set over the sea"
 ]
 
-def preprocess_for_stridemap(pipe):
+def preprocess_for_stridemap(pipe, height, width, frames):
     """
     Preprocess for generating stride map with auto-setting.
     Only rank 0 will set the map, then broadcast to all processes.
@@ -761,9 +765,9 @@ def preprocess_for_stridemap(pipe):
         pipe: The generation pipeline to use for collecting redundancy data
     """
     config = get_config()
-    height = 480
-    width = 720
-    frames = 48
+    height = height
+    width = width
+    frames = frames
     generator = torch.Generator().manual_seed(config.seed)
     
     # Display start message on rank 0

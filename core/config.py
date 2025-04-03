@@ -43,7 +43,6 @@ class DiTangoConfig:
             
             # Cache and optimization parameters
             'use_easy_cache': False,
-            'cache_threshold': None,
         }
         
         # Load from config file if provided

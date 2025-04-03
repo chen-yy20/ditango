@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
 from .group_coordinate import GroupCoordinator
 from .feature_cache import get_cache, exist_oCache
-from ..logger import init_logger
-from ..timer import get_timer
+from ...logger import init_logger
+from ...timer import get_timer
 from ..diff_sensor import get_diff_sensor
 
 import nvtx

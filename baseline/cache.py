@@ -7,8 +7,11 @@ from ..core.stride_map import get_stride_map
 from ..core.parallel_state import get_usp_group
 from ..core.config import get_config
 from ..logger import init_logger
+from ..utils import get_timestep
 
 logger = init_logger(__name__)
+Fusion_Cache = None
+Easy_Cache = None
 
 class DistriFusionKVCache:
     def __init__(self):
@@ -18,7 +21,6 @@ class DistriFusionKVCache:
         Args:
             stride_map: Binary tensor indicating whether to cache at each timestep and layer
         """
-        self.timestep = 0
         self.num_timesteps, self.num_layers = get_config().num_inference_steps, get_config().num_layers
         self.full_sp_size = get_usp_group().world_size
         
@@ -27,9 +29,15 @@ class DistriFusionKVCache:
         
     def should_cache(self, layer_id: int) -> bool:
         """Check if current timestep and layer should be cached"""
-        if self.timestep + 1 >= self.num_timesteps:
+        timestep = get_timestep()
+        if timestep > 1:
+            return True
+        else:
             return False
-        return get_stride_map().get_next_isp_stride(self.timestep, layer_id) < self.full_sp_size # next step need cache
+        
+        # if self.timestep + 1 >= self.num_timesteps:
+        #     return False
+        # return get_stride_map().get_next_isp_stride(self.timestep, layer_id) < self.full_sp_size # next step need cache
     
     def is_cached(self, layer_id: int) -> bool:
         """Check if features for given layer are cached"""
@@ -94,7 +102,7 @@ class DistriFusionKVCache:
         self.cache[layer_id]["k"] = k_gathered
         self.cache[layer_id]["v"] = v_gathered
         
-        # logger.info(f"l{layer_id} t{self.timestep} | Gathered KV, shapes: k={k_gathered.shape}, v={v_gathered.shape}, mem={torch.cuda.max_memory_allocated()}")
+        # logger.info(f"l{layer_id} t{get_timestep()} | Gathered KV, shapes: k={k_gathered.shape}, v={v_gathered.shape}, mem={torch.cuda.max_memory_allocated()}")
 
     def get_cache_status(self) -> Dict:
         """Get current cache status"""
@@ -115,24 +123,21 @@ class DistriFusionKVCache:
         """Clear all cached features"""
         self.cache.clear()
     
-    def update_timestep(self, timestep: int):
-        """Update current timestep"""
-        self.timestep = timestep
 
 class easyCache:
-    def __init__(self, num_timesteps, num_layers, threshold):
+    def __init__(self):
        self.timestep = 0
-       self.num_layers = num_layers
-       self.num_timesteps = num_timesteps
-       self.threshold = threshold
+       self.num_layers = get_config().num_layers
+       self.num_timesteps = get_config().num_inference_steps
        self.cache = {}
-       self.total_steps = get_config().num_inference_steps
        
    
-    def is_important(self, layer_id: int):
-        importance = get_stride_map().get_curr_isp_stride(self.timestep, layer_id)
+    def is_important(self):
         # logger.info(f"{self.timestep}-{layer_id} | {importance=} {self.threshold=}")
-        return importance > self.threshold
+        timestep = get_timestep()
+        if timestep < 3 or timestep > self.num_timesteps - 3:
+            return True
+        return get_timestep() % 3 == 0
     
     def should_cache(self, layer_id: int):
         if self.timestep == self.total_steps -1:
@@ -169,3 +174,47 @@ class easyCache:
         if timestep == self.total_steps -1 or timestep == 0: 
             self.clear()
         
+
+def init_fusion_cache():
+    """
+    Initialize the global DistriFusionKVCache instance
+    """
+    global Fusion_Cache
+    if Fusion_Cache is None:
+        Fusion_Cache = DistriFusionKVCache()
+        logger.info("Initialized DistriFusionKVCache")
+    else:
+        logger.warning("DistriFusionKVCache already initialized")
+
+def get_fusion_cache() -> DistriFusionKVCache:
+    """
+    Get the global DistriFusionKVCache instance
+    """
+    global Fusion_Cache
+    if Fusion_Cache is None:
+        logger.error("DistriFusionKVCache not initialized. Please call init_fusion_cache() first.")
+        return None
+    return Fusion_Cache
+
+
+def init_easy_cache():
+    config = get_config()
+    global Easy_Cache
+    if Easy_Cache is None:
+        Easy_Cache = easyCache()
+        logger.info("Initialized easyCache")
+    else:
+        logger.warning("easyCache already initialized")
+        
+def get_easy_cache() -> easyCache:
+    """
+    Get the global easyCache
+    """
+    global Easy_Cache
+    if Easy_Cache is None:
+        logger.error("easyCache not initialized. Please call init_easy_cache() first.")
+        return None
+    return Easy_Cache
+
+
+

@@ -29,7 +29,7 @@ from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.normalization import AdaLayerNorm, CogVideoXLayerNormZero
 
-from ditango.core.parallel_state import get_usp_group, get_cfg_group
+from ditango.core.parallel_state import get_usp_group, get_isp_group
 from ditango.core.config import get_config
 from ditango.utils import split_tensor_uneven, remove_padding_after_gather
 from ditango.logger import init_logger
@@ -37,6 +37,7 @@ from ditango.timer import get_timer
 from ditango.executor.cogvideox import CVX_oCacheAttnProcessor
 from ditango.baseline.ulysses import CVX_UlyssesAttnProcessor
 from ditango.baseline.distrifusion import CVX_DistriFusion_AttnProcessor
+from ditango.baseline.cache import get_easy_cache
 
 # from ditango.executor.model.attention_processor import Ulysses_CogVideoXAttnProcessor2_0, FusedCogVideoXAttnProcessor2_0
 
@@ -109,7 +110,7 @@ class CogVideoXBlock(nn.Module):
         elif args.use_distrifusion:
             if layer_id == 0:
                 logger.warning("======= You are using baseline DistriFusion Attention instead of DiTango Attention. =========")
-            attn_processor = CVX_DistriFusion_AttnProcessor(layer_id)
+            attn_processor = CVX_DistriFusion_AttnProcessor(layer_id, get_usp_group())
         else:
             attn_processor = CVX_oCacheAttnProcessor(layer_id)
         self.attn1 = Attention(
@@ -150,9 +151,9 @@ class CogVideoXBlock(nn.Module):
         )
 
         # attention
-        if get_config().use_easy_cache and False:
-            easyCache = None
-            if not easyCache.is_important(self.layer_id):
+        if get_config().use_easy_cache:
+            easyCache = get_easy_cache()
+            if not easyCache.is_important():
                 attn_hidden_states = easyCache.get_feature(self.layer_id, name="attn")
                 attn_encoder_hidden_states = easyCache.get_feature(self.layer_id, name="attn_encoder")
                 logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn_hidden_states.shape=} {attn_encoder_hidden_states.shape=}")
@@ -475,7 +476,7 @@ class CogVideoXTransformer3DModel(ModelMixin, ConfigMixin):
         if get_usp_group().world_size > 1:
             hidden_states = split_tensor_uneven(hidden_states, get_usp_group().world_size, dim=1, tensor_name='hidden')[get_usp_group().rank_in_group]
             encoder_hidden_states = split_tensor_uneven(encoder_hidden_states, get_usp_group().world_size, dim=1, tensor_name='encoder_hidden')[get_usp_group().rank_in_group]
-            if image_rotary_emb is not None and not get_config().use_ulysses:
+            if image_rotary_emb is not None and not (get_config().use_ulysses):
                 cos, sin = image_rotary_emb
                 cos_splits = split_tensor_uneven(cos, get_usp_group().world_size, dim=0)
                 sin_splits = split_tensor_uneven(sin, get_usp_group().world_size, dim=0)
