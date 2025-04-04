@@ -156,8 +156,6 @@ class StrideMap:
         """Reset stride map to initial state"""
         self.divider_map = self._init_map()
         
-        
-
     # Preprocess to Autoset StrideMap
     def enable_auto_setting(self):
         """Enable auto setting mode - collects redundancy data during inference"""
@@ -191,24 +189,31 @@ class StrideMap:
             logger.info(f"T{timestep} L{layer_id} | {curr_out.shape=}, memory={torch.cuda.memory_allocated() / 1024 / 1024:.2f} MB")
             return
         # Calculate relative L1 distance
+        # logger.debug(f"T{timestep} L{layer_id} R{torch.distributed.get_rank()} | {curr_out[:2]=}, {prev_out[:2]=}")
         rel_l1_distance = rel_l1(curr_out, prev_out)
+        # logger.debug(f"T{timestep} L{layer_id} R{torch.distributed.get_rank()}| Auto Setting: {self.redundancy_map=}, {self.redundancy_map[timestep, layer_id]}, add: {rel_l1_distance}")
         self.redundancy_map[timestep, layer_id] += rel_l1_distance
         self.prev_out[layer_id] = curr_out
         
-    def _auto_set_divider_map(self):
+    def generate_divider_map_from_redundancy(self, custom_percentages=None, custom_dividers=None):
         """
-        Automatically set divider map based on recorded redundancy
-        - Higher redundancy -> higher divider (smaller stride)
-        - Redundancy ranges are determined by map_percentage percentiles
-        - Only non-zero redundancy values are considered
+        Generate divider map from redundancy data with customizable parameters
         
+        Args:
+            custom_percentages: Optional custom percentile thresholds [low, mid, high]
+            custom_dividers: Optional custom divider values [lowest, low, mid, high]
+            
         Returns:
             percentiles: The calculated percentile values used for mapping
         """
-        if not self.auto_setting or self.redundancy_map is None:
-            logger.warning("Cannot auto-set divider map: auto_setting is not enabled or no redundancy data")
-            return
-
+        if self.redundancy_map is None:
+            logger.warning("Cannot generate divider map: no redundancy data available")
+            return None
+            
+        # Use custom parameters if provided, otherwise use defaults
+        percentages = custom_percentages if custom_percentages is not None else self.map_percentage
+        dividers = custom_dividers if custom_dividers is not None else self.stride_divider
+        
         # Collect all non-zero redundancy values
         non_zero_values = []
         for t in range(self.num_timesteps):
@@ -219,15 +224,15 @@ class StrideMap:
         
         if len(non_zero_values) == 0:
             logger.warning("No non-zero redundancy values found, keeping default divider map")
-            return
+            return None
         
         # Calculate percentiles for redundancy distribution
         non_zero_values = np.array(non_zero_values)
-        percentiles = [np.percentile(non_zero_values, p) for p in self.map_percentage]
+        percentiles = [np.percentile(non_zero_values, p) for p in percentages]
         
-        logger.info(f"Auto-setting divider map with percentiles: {percentiles}")
-        logger.info(f"Corresponding to percentages: {self.map_percentage}")
-        logger.info(f"Using dividers: {self.stride_divider}")
+        logger.info(f"Generating divider map with percentiles: {percentiles}")
+        logger.info(f"Corresponding to percentages: {percentages}")
+        logger.info(f"Using dividers: {dividers}")
         
         # Reset divider map to base values
         self.divider_map = self._init_map()
@@ -240,21 +245,21 @@ class StrideMap:
                 # Only process non-zero redundancy values
                 if redundancy > 0:
                     # Map redundancy to appropriate divider
-                    if redundancy < percentiles[0]:  # 0-20%
-                        divider = self.stride_divider[0]  # Lowest divider (largest stride)
-                    elif redundancy < percentiles[1]:  # 20-50%
-                        divider = self.stride_divider[1]
-                    elif redundancy < percentiles[2]:  # 50-80%
-                        divider = self.stride_divider[2]
-                    else:  # 80-100%
-                        divider = self.stride_divider[3]  # Highest divider (smallest stride)
+                    if redundancy < percentiles[0]:  # 0-low%
+                        divider = dividers[0]  # Lowest divider (largest stride)
+                    elif redundancy < percentiles[1]:  # low-mid%
+                        divider = dividers[1]
+                    elif redundancy < percentiles[2]:  # mid-high%
+                        divider = dividers[2]
+                    else:  # high-100%
+                        divider = dividers[3]  # Highest divider (smallest stride)
                     
                     # Ensure divider is valid for base_weight
                     if self.base_weight < divider:
                         divider = 1
                     elif self.base_weight % divider != 0:
                         # Find closest valid divider
-                        for d in sorted(self.stride_divider):
+                        for d in sorted(dividers):
                             if self.base_weight % d == 0 and d <= divider:
                                 divider = d
                                 break
@@ -264,10 +269,11 @@ class StrideMap:
                     # Set divider in map (ensure it's an integer)
                     self.divider_map[t, l] = int(divider)
         
-        logger.info(f"Auto-set divider map complete")
+        logger.info(f"Divider map generation complete")
         
         # Return percentiles for visualization
         return percentiles
+
     def _refine_divider_map(self):
         """
         Refine the divider map to ensure valid transitions between timesteps.
@@ -311,10 +317,96 @@ class StrideMap:
             logger.info(f"Refined divider map: {changes} values changed to ensure valid transitions")
         
         return changes
-
-    def visualize_maps(self, output_dir=None, file_prefix="stride"):
+    
+    def visualize_redundancy_map(self, output_dir, file_prefix="redundancy"):
         """
-        Generate and save visualizations of redundancy and divider maps with improved aesthetics
+        Generate and save visualization for redundancy map
+        
+        Args:
+            output_dir: Directory to save the redundancy map visualization
+            file_prefix: Prefix for the saved file
+            
+        Returns:
+            Path to the generated visualization file
+        """
+        if self.redundancy_map is None:
+            logger.warning("Cannot visualize redundancy map: no data available")
+            return None
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Set style for better visualization
+        plt.style.use('ggplot')
+        
+        # Create file path without timestamp
+        redundancy_file = os.path.join(output_dir, f"{file_prefix}_map.png")
+        
+        # Convert to numpy array
+        redundancy_data = self.redundancy_map.cpu().numpy()
+        
+        # Collect all non-zero redundancy values
+        non_zero_values = redundancy_data[redundancy_data > 0]
+        
+        if len(non_zero_values) > 0:
+            fig, ax = plt.subplots(figsize=(14, 10), dpi=120)
+            
+            # Create custom colormap with special handling for zero values
+            cmap = plt.cm.viridis.copy()
+            cmap.set_under('#f0f0f0')  # Light gray for values below minimum (zero)
+            
+            # Set non-zero minimum and maximum values
+            vmin = 0.00001
+            vmax = max(0.3, np.percentile(non_zero_values, 95))  # Use 95th percentile for better contrast
+            
+            # Draw heatmap
+            im = ax.imshow(redundancy_data, cmap=cmap, vmin=vmin, vmax=vmax, aspect='auto')
+            
+            # Add colorbar
+            cbar = fig.colorbar(im, pad=0.02, extend='both')
+            cbar.set_label('Redundancy (L1 Distance)', fontsize=12)
+            cbar.ax.tick_params(labelsize=10)
+            
+            # Set axis labels and title
+            ax.set_xlabel('Layer ID', fontsize=12)
+            ax.set_ylabel('Timestep', fontsize=12)
+            ax.set_title('Redundancy Map', fontsize=14, fontweight='bold')
+            
+            # Add grid lines
+            ax.grid(False)  # Remove default grid
+            
+            # Add timestep and layer ticks
+            # For larger dimensions, only show a subset of ticks
+            timesteps = range(self.num_timesteps)
+            layers = range(self.num_layers)
+            
+            if self.num_timesteps > 10:
+                step = max(1, self.num_timesteps // 10)
+                ax.set_yticks(range(0, self.num_timesteps, step))
+                ax.set_yticklabels([f"{t}" for t in timesteps[::step]])
+            else:
+                ax.set_yticks(range(self.num_timesteps))
+                ax.set_yticklabels([f"{t}" for t in timesteps])
+                
+            if self.num_layers > 10:
+                step = max(1, self.num_layers // 10)
+                ax.set_xticks(range(0, self.num_layers, step))
+                ax.set_xticklabels([f"L{l}" for l in layers[::step]])
+            else:
+                ax.set_xticks(range(self.num_layers))
+                ax.set_xticklabels([f"L{l}" for l in layers])
+            
+            plt.tight_layout()
+            plt.savefig(redundancy_file)
+            plt.close(fig)
+            
+            logger.info(f"Redundancy map visualization saved to {redundancy_file}")
+            return redundancy_file
+        
+        return None
+
+    def visualize_divider_map(self, output_dir=None, file_prefix="stride"):
+        """
+        Generate and save visualization for divider map with timestamps
         
         Args:
             output_dir: Directory to save visualization files
@@ -324,9 +416,8 @@ class StrideMap:
             Dictionary with paths to generated visualization files
         """
         # Ensure output directory exists
-        args = get_config()
         if output_dir is None:
-            output_dir = f"{args.ditango_base}/configs/{args.model_name}"
+            output_dir = "./logs/"
         os.makedirs(output_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         
@@ -335,72 +426,7 @@ class StrideMap:
         # Set better style
         plt.style.use('ggplot')
         
-        # 1. Generate redundancy map visualization if available
-        if self.redundancy_map is not None:
-            redundancy_file = os.path.join(output_dir, f"{file_prefix}_{timestamp}_redundancy.png")
-            
-            # Convert to numpy array
-            redundancy_data = self.redundancy_map.cpu().numpy()
-            
-            # Collect all non-zero redundancy values
-            non_zero_values = redundancy_data[redundancy_data > 0]
-            
-            if len(non_zero_values) > 0:
-                fig, ax = plt.subplots(figsize=(14, 10), dpi=120)
-                
-                # Create custom colormap with special handling for zero values
-                cmap = plt.cm.viridis.copy()
-                cmap.set_under('#f0f0f0')  # Light gray for values below minimum (zero)
-                
-                # Set non-zero minimum and maximum values
-                vmin = 0.00001
-                vmax = max(0.3, np.percentile(non_zero_values, 95))  # Use 95th percentile for better contrast
-                
-                # Draw heatmap
-                im = ax.imshow(redundancy_data, cmap=cmap, vmin=vmin, vmax=vmax, aspect='auto')
-                
-                # Add colorbar
-                cbar = fig.colorbar(im, pad=0.02, extend='both')
-                cbar.set_label('Redundancy (L1 Distance)', fontsize=12)
-                cbar.ax.tick_params(labelsize=10)
-                
-                # Set axis labels and title
-                ax.set_xlabel('Layer ID', fontsize=12)
-                ax.set_ylabel('Timestep', fontsize=12)
-                ax.set_title('Redundancy Map', fontsize=14, fontweight='bold')
-                
-                # Add grid lines
-                ax.grid(False)  # Remove default grid
-                
-                # Add timestep and layer ticks
-                # For larger dimensions, only show a subset of ticks
-                timesteps = range(self.num_timesteps)
-                layers = range(self.num_layers)
-                
-                if self.num_timesteps > 10:
-                    step = max(1, self.num_timesteps // 10)
-                    ax.set_yticks(range(0, self.num_timesteps, step))
-                    ax.set_yticklabels([f"{t}" for t in timesteps[::step]])
-                else:
-                    ax.set_yticks(range(self.num_timesteps))
-                    ax.set_yticklabels([f"{t}" for t in timesteps])
-                    
-                if self.num_layers > 10:
-                    step = max(1, self.num_layers // 10)
-                    ax.set_xticks(range(0, self.num_layers, step))
-                    ax.set_xticklabels([f"L{l}" for l in layers[::step]])
-                else:
-                    ax.set_xticks(range(self.num_layers))
-                    ax.set_xticklabels([f"L{l}" for l in layers])
-                
-                plt.tight_layout()
-                plt.savefig(redundancy_file)
-                plt.close(fig)
-                
-                visualization_files['redundancy_map'] = redundancy_file
-                logger.info(f"Redundancy map visualization saved to {redundancy_file}")
-        
-        # 2. Generate divider map visualization with improved aesthetics
+        # Generate divider map visualization with improved aesthetics
         divider_file = os.path.join(output_dir, f"{file_prefix}_{timestamp}_divider.png")
         
         # Convert to numpy array (ensure it's integer type)
@@ -490,7 +516,7 @@ class StrideMap:
         visualization_files['divider_map'] = divider_file
         logger.info(f"Divider map visualization saved to {divider_file}")
         
-        # 3. Generate information text file (unchanged)
+        # Generate information text file
         info_file = os.path.join(output_dir, f"{file_prefix}_{timestamp}_info.txt")
         
         with open(info_file, 'w') as f:
@@ -534,38 +560,38 @@ class StrideMap:
                     f.write(f"Redundancy Range | Percentile | Assigned Divider | Resulting Stride\n")
                     f.write(f"----------------|------------|-----------------|----------------\n")
                     
-                    # 0-20%
+                    # 动态生成冗余度与分割器映射的说明
+                    # 处理第一个区间 (0 到第一个百分位)
                     stride = self.base_weight // self.stride_divider[0] if self.base_weight % self.stride_divider[0] == 0 else "N/A"
                     f.write(f"0.0 - {percentiles[0]:.6f} | 0-{self.map_percentage[0]}% | {self.stride_divider[0]:17d} | {stride}\n")
                     
-                    # 20-50%
-                    stride = self.base_weight // self.stride_divider[1] if self.base_weight % self.stride_divider[1] == 0 else "N/A"
-                    f.write(f"{percentiles[0]:.6f} - {percentiles[1]:.6f} | {self.map_percentage[0]}-{self.map_percentage[1]}% | {self.stride_divider[1]:17d} | {stride}\n")
+                    # 处理中间区间
+                    for i in range(len(self.map_percentage)-1):
+                        stride = self.base_weight // self.stride_divider[i+1] if self.base_weight % self.stride_divider[i+1] == 0 else "N/A"
+                        f.write(f"{percentiles[i]:.6f} - {percentiles[i+1]:.6f} | {self.map_percentage[i]}-{self.map_percentage[i+1]}% | {self.stride_divider[i+1]:17d} | {stride}\n")
                     
-                    # 50-80%
-                    stride = self.base_weight // self.stride_divider[2] if self.base_weight % self.stride_divider[2] == 0 else "N/A"
-                    f.write(f"{percentiles[1]:.6f} - {percentiles[2]:.6f} | {self.map_percentage[1]}-{self.map_percentage[2]}% | {self.stride_divider[2]:17d} | {stride}\n")
-                    
-                    # 80-100%
-                    stride = self.base_weight // self.stride_divider[3] if self.base_weight % self.stride_divider[3] == 0 else "N/A"
-                    f.write(f"{percentiles[2]:.6f} - ∞ | {self.map_percentage[2]}-100% | {self.stride_divider[3]:17d} | {stride}\n")
+                    # 处理最后一个区间 (最后一个百分位到无穷大)
+                    stride = self.base_weight // self.stride_divider[-1] if self.base_weight % self.stride_divider[-1] == 0 else "N/A"
+                    f.write(f"{percentiles[-1]:.6f} - inf | {self.map_percentage[-1]}-100% | {self.stride_divider[-1]:17d} | {stride}\n")
         
         visualization_files['info'] = info_file
         logger.info(f"StrideMap information saved to {info_file}")
-    
+
         return visualization_files
 
     def finished_one_round(self):
         """Mark completion of one processing round"""
         self.calc_round += 1
+        self.prev_out = [None] * self.num_layers
+        if torch.distributed.get_rank() in [0, 7]:
+            logger.debug(f"{self.redundancy_map=}")
         logger.info(f"Finished StrideMap auto-setting round {self.calc_round}")
     
     def finish_auto_setting(self):
         """
-        Disable auto setting and apply collected redundancy data to set divider map.
-        All processes average their redundancy maps using all_reduce,
-        then each process generates the same divider map based on the averaged redundancy.
-        Visualization is only done by rank 0.
+        Disable auto setting and collect redundancy data.
+        All processes average their redundancy maps using all_reduce.
+        Does NOT generate divider map automatically - this is now done separately.
         """
         if not self.auto_setting:
             logger.info("Auto setting is not enabled, nothing to finish")
@@ -581,20 +607,11 @@ class StrideMap:
             logger.info(f"All-reduced redundancy map from all processes")
             self.redundancy_map = redun.to(self.redundancy_map.device)
         
-        # Now each process generates divider map based on the same redundancy data
-        logger.info("Generating divider map from collected redundancy data")
-        percentiles = self._auto_set_divider_map()
-        self._refine_divider_map()
-        
-        # Only rank 0 generates visualizations and saves the map
+        # Only rank 0 generates visualizations and saves the redundancy map
         if torch.distributed.get_rank() == 0:
-            # Generate visualizations
-            self.visualize_maps()
-            # Save the divider map to disk for future use
-            save_path = save_divider_map(override=True)
-            logger.info(f"Auto-setting complete for round {self.calc_round}" + 
-                    (f" with percentiles: {percentiles}" if percentiles is not None else "") +
-                    (f", map saved to {save_path}" if save_path else ""))
+            # Save the redundancy map to disk for future use
+            save_path = save_redundancy_map(override=True)
+            logger.info(f"Auto-setting complete for round {self.calc_round}, redundancy map saved to {save_path}")
         
         # Clean up and disable auto-setting
         self.auto_setting = False
@@ -631,52 +648,80 @@ def print_stride_map(logger=None):
 
 _stride_map: Optional[StrideMap] = None
 
-def init_stride_map(args, load_map_path=None):
+def init_stride_map(args, load_map_path=None, custom_percentages=None, custom_dividers=None):
     """
     Initialize global stride map
     
     Args:
-        args: Arguments containing num_inference_steps and num_layers
-        load_map_path: Optional path to load a pre-computed divider map
+        args: Config object containing parameters
+        load_map_path: Optional path to load a pre-computed redundancy map
+        custom_percentages: Optional custom percentile thresholds [low, mid, high]
+        custom_dividers: Optional custom divider values [lowest, low, mid, high]
         
     Returns:
         Initialized StrideMap instance
     """
     global _stride_map
     assert _stride_map is None, ("Stride map is already initialized")
+    
+    # Initialize StrideMap with config
     stride_map = StrideMap(args)
     _stride_map = stride_map
+    
+    # Use config values if custom parameters not provided
+    if custom_percentages is None and hasattr(args, 'stride_percentiles'):
+        custom_percentages = args.stride_percentiles
+    
+    if custom_dividers is None and hasattr(args, 'stride_dividers'):
+        custom_dividers = args.stride_dividers
     
     if args.use_easy_cache:
         print_stride_map()
         return stride_map
     
-    # Try to load pre-computed divider map if path is provided or check default location
+    # Try to load pre-computed redundancy map if path is provided or check default location
     if load_map_path is None:
         # Check default location
-        default_path = os.path.join(f"{args.ditango_base}/configs/{args.model_name}/", f"divider_map_{args.num_inference_steps}_{args.num_layers}.pt")
+        default_path = os.path.join(f"{args.ditango_base}/configs/{args.model_name}/", 
+                                  f"redundancy_map_{args.num_inference_steps}_{args.num_layers}.pt")
         if os.path.exists(default_path):
             load_map_path = default_path
         else:
-            logger.warning(f"No pre-computed divider map found at default location: {default_path}, Using full stride map instead")
+            logger.warning(f"No pre-computed redundancy map found at default location: {default_path}, Using full stride map instead")
     
     if load_map_path is not None and os.path.exists(load_map_path):
         # Only rank 0 prints the loading message
         if torch.distributed.get_rank() == 0:
-            logger.info(f"Loading pre-computed divider map from {load_map_path}")
+            logger.info(f"Loading pre-computed redundancy map from {load_map_path}")
         
         try:
-            # Load the divider map tensor
+            # Load the redundancy map tensor
             loaded_map = torch.load(load_map_path, map_location='cpu')
             
             # Verify the loaded map has correct dimensions
             if (loaded_map.shape[0] == args.num_inference_steps and 
                 loaded_map.shape[1] == args.num_layers):
-                stride_map.divider_map = loaded_map
+                # Set the redundancy map
+                stride_map.redundancy_map = loaded_map
                 
-                # Only rank 0 prints success message
+                # Generate divider map with parameters from config or custom parameters
+                percentiles = stride_map.generate_divider_map_from_redundancy(
+                    custom_percentages=custom_percentages, 
+                    custom_dividers=custom_dividers
+                )
+                
+                # Refine divider map to ensure valid transitions
+                stride_map._refine_divider_map()
+                
+                # Only rank 0 prints success message and visualization
                 if torch.distributed.get_rank() == 0:
-                    logger.info(f"Successfully loaded divider map with shape {loaded_map.shape}")
+                    logger.info(f"Successfully loaded redundancy map with shape {loaded_map.shape}")
+                    logger.info(f"Generated divider map with" + 
+                             (f" percentages {custom_percentages}" if custom_percentages else " default percentages") +
+                             (f" and dividers {custom_dividers}" if custom_dividers else " and default dividers"))
+                    
+                    # Generate visualizations for divider map in logs directory
+                    stride_map.visualize_divider_map(output_dir="./logs/")
             else:
                 # If dimensions don't match, warn and use default
                 if torch.distributed.get_rank() == 0:
@@ -686,14 +731,66 @@ def init_stride_map(args, load_map_path=None):
         except Exception as e:
             # If loading fails, warn and use default
             if torch.distributed.get_rank() == 0:
-                logger.warning(f"Failed to load divider map: {str(e)}. Using default map instead.")
+                logger.warning(f"Failed to load redundancy map: {str(e)}. Using default map instead.")
                 
     print_stride_map()
     return stride_map
 
+def save_redundancy_map(path=None, override=False):
+    """
+    Save current redundancy map to disk and generate visualization
+    
+    Args:
+        path: Path to save the redundancy map. If None, uses default path.
+        override: Whether to override existing file if it exists
+        
+    Returns:
+        Path where map was saved, or None if saving failed
+    """
+    args = get_config()
+    stride_map = get_stride_map()
+    if stride_map is None or stride_map.redundancy_map is None:
+        logger.warning("Cannot save redundancy map: stride map not initialized or no redundancy data available")
+        return None
+    
+    # Only rank 0 needs to save the map
+    if torch.distributed.get_rank() != 0:
+        return None
+    
+    # Generate default path if not provided
+    if path is None:
+        # Create directory if it doesn't exist
+        config_dir = f"{args.ditango_base}/configs/{args.model_name}/"
+        os.makedirs(config_dir, exist_ok=True)
+        path = os.path.join(config_dir, 
+                          f"redundancy_map_{stride_map.num_timesteps}_{stride_map.num_layers}.pt")
+    
+    # Check if file exists and handle override
+    if os.path.exists(path) and not override:
+        logger.warning(f"File {path} already exists. Use override=True to replace it.")
+        return None
+    
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        # Save the redundancy map
+        torch.save(stride_map.redundancy_map, path)
+        logger.info(f"Redundancy map saved to {path}")
+        
+        # Generate visualization in the same directory as the redundancy map
+        vis_path = stride_map.visualize_redundancy_map(os.path.dirname(path))
+        if vis_path:
+            logger.info(f"Redundancy map visualization saved to {vis_path}")
+            
+        return path
+    except Exception as e:
+        logger.error(f"Failed to save redundancy map: {str(e)}")
+        return None
+
 def save_divider_map(path=None, override=False):
     """
-    Save current divider map to disk
+    Save current divider map to disk (kept for backward compatibility)
     
     Args:
         path: Path to save the divider map. If None, uses default path.
@@ -747,16 +844,12 @@ def get_stride_map() -> StrideMap:
         return None
     return _stride_map
 
-prompt_list = [
-  # "A video of a cat playing with a ball",
-  # "A playful black Labrador, adorned in a vibrant pumpkin-themed Halloween costume, frolics in a sunlit autumn garden, surrounded by fallen leaves. The dog's costume features a bright orange body with a green leafy collar, perfectly complementing its shiny black fur. As it bounds joyfully across the lawn, the sunlight catches the costume's fabric, creating a delightful contrast with the dog's dark coat. The scene captures the essence of autumn festivities, with the dog's wagging tail and playful demeanor adding to the cheerful atmosphere. Nearby, carved pumpkins and scattered leaves enhance the festive setting.",
-  "A charming boat glides gracefully along the serene Seine River, its sails catching a gentle breeze, while the iconic Eiffel Tower stands majestically in the background. The scene is rendered in rich, textured oil paints, capturing the warm hues of a late afternoon sun casting a golden glow over the water. The boat, with its elegant design and vibrant colors, contrasts beautifully with the soft, impressionistic strokes of the surrounding landscape. The Eiffel Tower, painted in delicate detail, rises above the Parisian skyline, its iron latticework shimmering in the light. The riverbanks are adorned with lush greenery and quaint buildings, their reflections dancing on the water's surface, creating a harmonious blend of nature and architecture. The overall composition exudes a sense of tranquility and timeless beauty, inviting viewers to immerse themselves in the idyllic Parisian scene.",
-  # "A cat walks on the grass, realistic style.",
-  # "A little girl is riding a bicycle at high speed. Focused, detailed, realistic.",
-  # "Sun set over the sea"
-]
+def is_preprocessing():
+    if _stride_map is None:
+        return False
+    return _stride_map.auto_setting
 
-def preprocess_for_stridemap(pipe, height, width, frames):
+def preprocess_for_stridemap(func, func_args, prompt_list):
     """
     Preprocess for generating stride map with auto-setting.
     Only rank 0 will set the map, then broadcast to all processes.
@@ -764,12 +857,9 @@ def preprocess_for_stridemap(pipe, height, width, frames):
     Args:
         pipe: The generation pipeline to use for collecting redundancy data
     """
+    if prompt_list is None:
+        prompt_list = ["A kitten wearing a red bow tie is dancing, the camera slowly zooms in from a distance"]
     config = get_config()
-    height = height
-    width = width
-    frames = frames
-    generator = torch.Generator().manual_seed(config.seed)
-    
     # Display start message on rank 0
     if config.rank == 0:    
         logger.info(f"====================== Start StrideMap AutoSetting! round={len(prompt_list)} ==============")
@@ -783,15 +873,7 @@ def preprocess_for_stridemap(pipe, height, width, frames):
             print(f"prompt: {prompt}\n Preprocessing...", flush=True)
             
         # Generate video to collect redundancy data
-        video = pipe(
-            height=height,
-            width=width,
-            num_frames=frames,
-            prompt=prompt,
-            num_inference_steps=config.num_inference_steps,
-            guidance_scale=6,
-            generator=generator,
-        ).frames[0]
+        video = func(prompt=prompt, **func_args)
         
         # Mark round as finished
         get_stride_map().finished_one_round()
@@ -802,3 +884,67 @@ def preprocess_for_stridemap(pipe, height, width, frames):
     # Print final stride map (only on rank 0)
     if config.rank == 0:    
         print_stride_map()
+
+# Function to generate and save divider map with custom settings
+def generate_divider_map_with_custom_settings(custom_percentages=None, custom_dividers=None, output_dir=None):
+    """
+    Generate a new divider map with custom settings from an existing redundancy map
+    
+    Args:
+        custom_percentages: Custom percentile thresholds [low, mid, high]
+        custom_dividers: Custom divider values [lowest, low, mid, high]
+        output_dir: Directory to save visualization files
+    
+    Returns:
+        Paths to generated visualization files
+    """
+    stride_map = get_stride_map()
+    if stride_map is None or stride_map.redundancy_map is None:
+        logger.warning("Cannot generate custom divider map: stride map not initialized or no redundancy data")
+        return None
+    
+    # Only rank 0 generates the divider map
+    if torch.distributed.get_rank() != 0:
+        return None
+    
+    # Use config values if custom values are not provided
+    if custom_percentages is None:
+        custom_percentages = get_config().stride_percentiles
+    if custom_dividers is None:
+        custom_dividers = get_config().stride_dividers
+    
+    # Set output directory to logs if not specified
+    if output_dir is None:
+        output_dir = "./logs/"
+    
+    # Generate divider map with custom parameters
+    stride_map.generate_divider_map_from_redundancy(
+        custom_percentages=custom_percentages,
+        custom_dividers=custom_dividers
+    )
+    
+    # Refine the divider map
+    stride_map._refine_divider_map()
+    
+    # Generate visualizations with custom prefix to distinguish them
+    percentages_str = "_".join([str(p) for p in custom_percentages]) if custom_percentages else "default"
+    dividers_str = "_".join([str(d) for d in custom_dividers]) if custom_dividers else "default"
+    file_prefix = f"stride_custom_p{percentages_str}_d{dividers_str}"
+    
+    # Generate and save visualizations
+    visualization_files = stride_map.visualize_divider_map(output_dir=output_dir, file_prefix=file_prefix)
+    
+    # Optionally save the generated divider map
+    save_path = None
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, f"divider_map_{stride_map.num_timesteps}_{stride_map.num_layers}_{file_prefix}.pt")
+        torch.save(stride_map.divider_map, save_path)
+        logger.info(f"Custom divider map saved to {save_path}")
+        visualization_files['divider_map_file'] = save_path
+    except Exception as e:
+        logger.error(f"Failed to save custom divider map: {str(e)}")
+    
+    logger.info(f"Generated custom divider map with percentages {custom_percentages if custom_percentages else 'default'} and dividers {custom_dividers if custom_dividers else 'default'}")
+    
+    return visualization_files

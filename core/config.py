@@ -1,4 +1,3 @@
-# arguments.py
 import os
 import yaml
 from pathlib import Path
@@ -24,7 +23,7 @@ class DiTangoConfig:
             
             # Generation parameters
             'num_layers': 42,
-            'num_inference_steps': 50,
+            'num_inference_steps': 5,
             'seed': 42,
             
             # Performance testing parameters
@@ -43,6 +42,10 @@ class DiTangoConfig:
             
             # Cache and optimization parameters
             'use_easy_cache': False,
+            
+            # StrideMap configuration
+            'stride_dividers': [8, 4, 2, 1],  # Divider values from largest stride to smallest
+            'stride_percentiles': [20, 50, 80]  # Percentile thresholds for redundancy mapping
         }
         
         # Load from config file if provided

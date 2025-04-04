@@ -3,6 +3,10 @@ import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 from typing import Optional, Dict, List, Tuple
+from ditango.logger import init_logger
+import math
+
+logger = init_logger(__name__)
 
 _PADDING_DICT: Dict[str, List[int]] = {}
 _TIMESTEP: int = 0
@@ -42,11 +46,17 @@ def update_out_and_lse(
     block_lse: torch.Tensor,
     slice_=None,
   ) -> Tuple[torch.Tensor, torch.Tensor]:
+    # lse shape should be [seq_len, head, 1]
+    # block lse shape should be [head, seqlen]
+    if block_lse.dim() == 3: # [seqlen, head, 1]
+            block_lse = block_lse.squeeze(-1).transpose(-1,-2) # switch to standard input shape: [head, seqlen]
+    if lse is not None and lse.dim() == 4:
+        lse = lse.squeeze(-1).transpose(-1,-2) # [seqlen, head, 1]
     if out is None:
       if slice_ is not None:
         raise RuntimeError("first update_out_and_lse should not pass slice_ args")
       out = block_out.to(torch.float32)
-      lse = block_lse.transpose(-2, -1).unsqueeze(dim=-1)
+      lse = block_lse.transpose(-2, -1).unsqueeze(dim=-1) # [head, seqlen] -> [seqlen, head, 1]
     elif slice_ is not None:
       slice_out, slice_lse = out[slice_], lse[slice_]
       slice_out, slice_lse = _update_out_and_lse(slice_out, slice_lse, block_out, block_lse)
@@ -157,14 +167,85 @@ def save_hwc_tensor(tensor, save_path):
     img.save(save_path)
 
 # 计算相对L1距离
-def rel_l1(new, ori) -> torch.Tensor:
-    # Calculate relative L1 distance
+# def rel_l1(new, ori) -> torch.Tensor:
+#     # Calculate relative L1 distance
+#     if torch.is_tensor(new) and torch.is_tensor(ori):
+#         rel_l1 = ((new - ori).abs().mean() / 
+#                     ori.abs().mean()).cpu().item()
+#     else:
+#         # Handle non-tensor case
+#         rel_l1 = abs(new - ori) / abs(ori)
+#     return rel_l1   
+
+import math
+import sys
+import torch
+
+def rel_l1(new, ori) -> float:
+    """
+    Calculate relative L1 distance with improved numerical stability.
+    
+    Args:
+        new: New tensor or scalar value
+        ori: Original tensor or scalar value (reference)
+        
+    Returns:
+        float: Relative L1 distance
+    """
+    # Handle tensor inputs
     if torch.is_tensor(new) and torch.is_tensor(ori):
-        rel_l1 = ((new - ori).abs().mean() / 
-                    ori.abs().mean()).cpu().item()
+        # Filter out NaN values if present
+        valid_mask = ~(torch.isnan(new) | torch.isnan(ori))
+        
+        # If no valid values remain, handle this case
+        if not valid_mask.any():
+            print("WARNING: All values are NaN in tensors")
+            # Return a sentinel value instead of exiting
+            return float('inf')
+        
+        # Extract valid values only
+        new_valid = new[valid_mask]
+        ori_valid = ori[valid_mask]
+        
+        # Calculate means with improved numerical stability
+        new_abs_mean = new_valid.abs().mean().cpu().item()
+        ori_abs_mean = ori_valid.abs().mean().cpu().item()
+        
+        # Add a small epsilon to prevent division by zero
+        epsilon = 1e-8
+        
+        # If reference is too small, use absolute difference instead of relative
+        if ori_abs_mean < 1e-6:
+            print(f"WARNING: Reference magnitude is very small ({ori_abs_mean}), using absolute difference")
+            return new_abs_mean
+        
+        # Calculate relative difference with added stability
+        rel_l1_val = (new_valid - ori_valid).abs().mean().cpu().item() / (ori_abs_mean + epsilon)
+    
+    # Handle scalar inputs
     else:
-        # Handle non-tensor case
-        rel_l1 = abs(new - ori) / abs(ori)
-    return rel_l1   
+        # Check for NaN in scalar inputs
+        if (isinstance(new, float) and math.isnan(new)) or (isinstance(ori, float) and math.isnan(ori)):
+            print("WARNING: NaN detected in scalar inputs")
+            return float('inf')
+        
+        # Add a small epsilon to prevent division by zero
+        epsilon = 1e-8
+        
+        # If reference is too small, use absolute value instead
+        if abs(ori) < 1e-6:
+            print(f"WARNING: Reference magnitude is very small ({abs(ori)}), using absolute value")
+            return abs(new)
+        
+        # Calculate stable relative difference
+        rel_l1_val = abs(new - ori) / (abs(ori) + epsilon)
+    
+    # Final sanity check on the result
+    if isinstance(rel_l1_val, float) and (math.isnan(rel_l1_val) or math.isinf(rel_l1_val)):
+        print(f"WARNING: Invalid result ({rel_l1_val}) in rel_l1 calculation")
+        # Return a large value instead of exiting
+        return float('inf')
+    
+    return rel_l1_val
 
 

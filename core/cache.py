@@ -17,6 +17,9 @@ class proCache:
         self.out_block_cache = [None] * self.curr_block_num
         self.lse_block_cache = [None] * self.curr_block_num
         
+        self.block_size_mb = None
+        self.memory_constraint = 0.7 * torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
+        
         logger.info(f"proCache initialized with ISP size {self.isp_size}")
         
     def get_curr_isp_stride(self, layer_id: int):
@@ -45,6 +48,8 @@ class proCache:
         # logger.debug(f"Blocks merged successfully, New cache len {len(self.out_block_cache)}")
         
     def update_cache_blocks(self, new_isp_stride: int, next_target_block_id: int):
+        # if self.layer_id == 0:
+        #     logger.info(f"Updating cache blocks: {self.curr_isp_stride=}, new_isp_stride {new_isp_stride}, next_target_block_id {next_target_block_id}")
         if new_isp_stride == self.isp_size: # 全面刷新
             self.curr_isp_stride = self.isp_size
             self.curr_block_num = self.isp_size
@@ -62,7 +67,6 @@ class proCache:
             self.lse_block_cache[next_target_block_id] = None
                 
    
-   
     def get_block(self, block_id: int):
         if block_id >= len(self.out_block_cache):
             logger.error(f"{get_timestep()} | Cache is not ready but trying to get cached value.")
@@ -77,65 +81,66 @@ class proCache:
     def clear(self):
         logger.warning("============== Clear oCache =================")
         
+    def pass_memory_check(self, next_isp_stride: int, layer_id: int):
+        if next_isp_stride == self.isp_size:
+            return True
+        curr_active_block_num = 0
+        for i, block in enumerate(self.out_block_cache):
+            if block is not None:
+                curr_active_block_num += 1
+                # calculate block_size_mb
+                if self.block_size_mb is None:
+                    block_size_mb = block.element_size() * block.nelement() / (1024 ** 2)
+                    if self.lse_block_cache[i] is not None:
+                        block_size_mb += self.lse_block_cache[i].element_size() * self.lse_block_cache[i].nelement() / (1024 ** 2)
+                    self.block_size_mb = block_size_mb
+        if self.block_size_mb is None:
+            return True
+        predict_active_block_num = self.isp_size // next_isp_stride
+        if predict_active_block_num <= curr_active_block_num:
+            return True
+        else:
+            predict_add_mem = self.block_size_mb * (predict_active_block_num - curr_active_block_num)
+            curr_memory = torch.cuda.memory_allocated() / (1024 * 1024)
+            # logger.info(f"T{get_timestep()}L{layer_id} |Curr_Stride {self.curr_isp_stride} | Next_Stride {next_isp_stride} | Memory check: Add {predict_add_mem} MB")
+            if curr_memory + predict_add_mem > self.memory_constraint:
+                logger.warning(f"T{get_timestep()}L{layer_id} | Memory check failed: {curr_memory + predict_add_mem} > {self.memory_constraint}, setting stride {next_isp_stride} to {self.isp_size}")
+                return False
+            return True
+        
+        
     def report_cache_status(self, layer_id: int):
         """
         Report the current status of the cache including:
         - Cache configuration
-        - Block storage status (filled or empty)
+        - Block storage status
+        - Memory usage information
         - Shape information of cached blocks
         """
-        # 缓存的基本配置信息
-        logger.info(f"===== Cache Status: Layer {layer_id}, Timestep {get_timestep()} =====")
-        logger.info(f"Maximum ISP Size: {self.isp_size}")
-        logger.info(f"Current ISP Stride: {self.curr_isp_stride}")
-        logger.info(f"Current Block Count: {self.curr_block_num}")
+        # 获取当前时间步
+        timestep = get_timestep()
         
         # 计算已缓存的块数
         cached_blocks = sum(1 for out in self.out_block_cache if out is not None)
-        logger.info(f"Filled Blocks: {cached_blocks}/{self.curr_block_num} ({cached_blocks/self.curr_block_num*100:.1f}% full)")
         
-        # 生成块状态可视化 (O:有数据 X:空)
-        block_status = ['O' if out is not None else 'X' for out in self.out_block_cache]
-        block_status_str = ' '.join(block_status)
-        logger.info(f"Block Status: [{block_status_str}]")
-        
-        # 报告块的形状信息
-        if cached_blocks > 0:
-            # 找到第一个非空块作为示例
-            example_block_id = next((i for i, out in enumerate(self.out_block_cache) if out is not None), None)
-            if example_block_id is not None:
-                example_out = self.out_block_cache[example_block_id]
-                example_lse = self.lse_block_cache[example_block_id]
-                
-                logger.info("Block Tensor Shapes:")
-                logger.info(f"  OUT tensor: {tuple(example_out.shape)}")
-                if example_lse is not None:
-                    logger.info(f"  LSE tensor: {tuple(example_lse.shape)}")
-                else:
-                    logger.info("  LSE tensor: None")
-        
-        logger.info("================================================")
-    
-    def report_memory_usage(self, layer_id: int):
-        """
-        Report memory usage information for the current layer:
-        - Number of cached blocks
-        - Total cache size
-        - Current GPU memory usage
-        """
-        # 计算非空块的数量
-        cached_blocks = sum(1 for out in self.out_block_cache if out is not None)
-        
-        # 计算单个块大小（只计算第一个非空块）
+        # 计算单个块大小并找到第一个非空块作为示例
         block_size_mb = 0
+        example_out = None
+        example_lse = None
+        
         for block_id in range(len(self.out_block_cache)):
             out = self.out_block_cache[block_id]
             lse = self.lse_block_cache[block_id]
             if out is not None:
+                example_out = out
+                example_lse = lse
+                
                 block_size_bytes = out.element_size() * out.nelement()
                 if lse is not None:
                     block_size_bytes += lse.element_size() * lse.nelement()
                 block_size_mb = block_size_bytes / (1024 * 1024)
+                if self.block_size_mb != block_size_mb:
+                    self.block_size_mb = block_size_mb
                 break
         
         # 计算总缓存大小
@@ -144,18 +149,41 @@ class proCache:
         # 获取当前GPU内存使用情况
         current_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # MB
         max_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)  # MB
-        total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)  # MB
+        total_memory = self.memory_constraint
         
-        # 输出简化报告
-        logger.info(f"===== Cache Report: Layer {layer_id}, Timestep {get_timestep()} =====")
-        logger.info(f"ISP stride: {self.curr_isp_stride}, Block count: {self.curr_block_num}")
-        logger.info(f"Cached blocks: {cached_blocks}/{self.curr_block_num}")
+        # 输出报告标题
+        logger.info(f"===== Cache Status: Layer {layer_id}, Timestep {timestep} =====")
+        
+        # 基本配置信息
+        logger.info(f"Maximum ISP Size: {self.isp_size}")
+        logger.info(f"Current ISP Stride: {self.curr_isp_stride}")
+        logger.info(f"Current Block Count: {self.curr_block_num}")
+        
+        # 缓存利用率信息
+        logger.info(f"Filled Blocks: {cached_blocks}/{self.curr_block_num} ({cached_blocks/self.curr_block_num*100:.1f}% full)")
+        
+        # 生成块状态可视化 (O:有数据 X:空)
+        block_status = ['O' if out is not None else 'X' for out in self.out_block_cache]
+        block_status_str = ' '.join(block_status)
+        logger.info(f"Block Status: [{block_status_str}]")
+        
+        # 内存使用信息
         logger.info(f"Block size: {block_size_mb:.2f} MB")
         logger.info(f"Total cache size: {total_cache_size_mb:.2f} MB")
         logger.info(f"GPU memory: {current_memory:.2f}/{total_memory:.2f} MB ({current_memory/total_memory*100:.1f}%)")
         
         if total_cache_size_mb > 0:
             logger.info(f"Cache percentage: {total_cache_size_mb/current_memory*100:.1f}% of GPU usage")
+        
+        # 张量形状信息 (直接报告，不需要额外参数)
+        if cached_blocks > 0 and example_out is not None:
+                
+            logger.info("Block Tensor Shapes:")
+            logger.info(f"  OUT tensor: {tuple(example_out.shape)}")
+            if example_lse is not None:
+                logger.info(f"  LSE tensor: {tuple(example_lse.shape)}")
+            else:
+                logger.info("  LSE tensor: None")
         
         logger.info("================================================")
         

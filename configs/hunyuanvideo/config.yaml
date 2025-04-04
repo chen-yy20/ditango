@@ -1,14 +1,14 @@
 # DiTango Configuration
 
 # Basic parameters
-model-name: cogvideox-5b
+model-name: hunyuanvideo
 ditango-base: ./ditango/
 output-fn: ./result/
 tag: test
 
 # Generation parameters
 seed: 42
-num-layers: 42
+num-layers: 60
 num-inference-steps: 50
 
 # Performance testing parameters
@@ -25,3 +25,7 @@ do-cfg-parallel: false
 use-ulysses: false
 use-distrifusion: false
 use-easy-cache: false
+
+# StrideMap configuration
+stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
+stride-percentiles: [20, 60, 90]  # Percentile thresholds for redundancy mapping

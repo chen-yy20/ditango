@@ -28,7 +28,7 @@ class proAttention:
         self.cache = proCache(isp_size=self.isp_size, layer_id=layer_id)
         
         self.use_overlap_ring = True
-        self.small_ring_stride = 4
+        self.small_ring_stride = 8
         logger.info(f"R{self.global_rank}L{layer_id} | proAttention initialized with ISP size {self.isp_size}")
         
     def async_ring_p2p_commit(self, tensors: Tuple[torch.Tensor, ...], src_rank: int, dst_rank: int):
@@ -77,22 +77,20 @@ class proAttention:
         # Note: input size should be (b, s, a, d)
         next_k, next_v = None, None
         out, lse = None, None
-        
+        timestep = get_timestep()
         # block size 就是 isp stride， 每次计算只计算一个block
         
-        # =================== 0. Initialize  =================
-        curr_isp_stride = get_stride_map().get_curr_isp_stride(get_timestep(), self.layer_id)
-        next_isp_stride = get_stride_map().get_next_isp_stride(get_timestep(), self.layer_id)
-        
+        # =================== 0. Memory Check  =================
+        curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
+        next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
         assert self.isp_size % curr_isp_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for SP size {self.isp_size}"
+        self.cache.pass_memory_check(next_isp_stride, self.layer_id)
+        
         total_block_num = self.isp_size // curr_isp_stride
         local_block_id = self.local_chunk_id // curr_isp_stride # 当前进程属于哪个block
         target_block_id = self.target_chunk_id // curr_isp_stride # 表示本轮需要计算的block id
         
         # =================== 1. Update Cached blocks =================
-        if self.layer_id == 0:
-            self.cache.report_cache_status(self.layer_id)
-            self.cache.report_memory_usage(self.layer_id)
         if curr_isp_stride == self.isp_size: # 满，刷新指针, 细粒度存储
             self.target_chunk_id = self.local_chunk_id
         else: # 不满，先更新cached block
@@ -100,7 +98,7 @@ class proAttention:
                 cached_block_id = (target_block_id + 1 + i) % total_block_num
                 cache_out, cache_lse = self.cache.get_block(cached_block_id)
                 # if self.layer_id == 0:
-                #     logger.debug(f"{get_timestep()}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
+                #     logger.debug(f"{timestep}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
                 if cache_lse is not None:
                     if cache_lse.dim() == 4:
                         cache_lse = cache_lse.squeeze(-1).transpose(-1,-2)
@@ -163,8 +161,8 @@ class proAttention:
                         src_rank=intra_prev_rank,
                         dst_rank=intra_next_rank,
                     )
-                    if get_timestep() > 4 and self.global_rank==14:
-                        logger.debug(f"{get_timestep()}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}")
+                    if timestep > 4 and self.global_rank==14:
+                        logger.debug(f"{timestep}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}")
                 elif inter_node_step + 1 != num_large_ring:
                     
                     next_k, next_v = self.async_ring_p2p_commit(
@@ -207,17 +205,16 @@ class proAttention:
                     finished_chunk_cnt = 0
                     
         # ================= 5. Cache Management =================
-        # if self.layer_id == 0:
-        #     logger.info(f"Before merge, {next_isp_stride=}")
-        #     self.cache.report_cache_status(self.layer_id)
+        if self.layer_id == 0:
+            self.cache.report_cache_status(self.layer_id)
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
                     
-        if self.global_rank == 0 and get_timestep() == 0 and self.layer_id == 10:
+        if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
             logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
        
         stride_map = get_stride_map()
-        stride_map.record_out_redundancy(timestep=get_timestep(),
+        stride_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,
                                             curr_out=out)
         return out
@@ -236,17 +233,22 @@ class proAttention:
     ):
         # Note: Varlen version is design for HunyuanVideo
         if cu_seqlens_q is None and cu_seqlens_kv is None and max_seqlen_q is None and max_seqlen_kv is None:
+            logger.warning("cu_seqlens_q not provided, using normal attention instead.")
             return self.attn(query, key, value)
         # Note: For varlen_attn, input qkv shape should be (bxs, a, d)
         
         next_k, next_v, next_cu_seqlens_kv = None, None, None
         out, lse = None, None
+        timestep = get_timestep()
         
         # block size 就是 isp stride， 每次计算只计算一个block
         
         # =================== 0. Initialize  =================
-        curr_isp_stride = get_stride_map().get_curr_isp_stride(get_timestep(), self.layer_id)
-        next_isp_stride = get_stride_map().get_next_isp_stride(get_timestep(), self.layer_id)
+        curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
+        next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
+        
+        if not self.cache.pass_memory_check(next_isp_stride, self.layer_id):
+            next_isp_stride = self.isp_size
         
         assert self.isp_size % curr_isp_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for SP size {self.isp_size}"
         total_block_num = self.isp_size // curr_isp_stride
@@ -254,22 +256,23 @@ class proAttention:
         target_block_id = self.target_chunk_id // curr_isp_stride # 表示本轮需要计算的block id
         
         # =================== 1. Update Cached blocks =================
-        if self.layer_id == 0:
-                self.cache.report_cache_status(self.layer_id)
+        if self.layer_id == 0 and self.global_rank == 0:
+            self.cache.report_cache_status(self.layer_id)
         if curr_isp_stride == self.isp_size: # 满，刷新指针, 细粒度存储
             self.target_chunk_id = self.local_chunk_id
         else: # 不满，先更新cached block
             for i in range(total_block_num - 1):
                 cached_block_id = (target_block_id + 1 + i) % total_block_num
                 cache_out, cache_lse = self.cache.get_block(cached_block_id)
-                if self.layer_id == 0:
-                    logger.debug(f"{get_timestep()}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
+                # if self.layer_id == 0:
+                #     logger.debug(f"{timestep}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
                 if cache_lse is not None:
                     if cache_lse.dim() == 4:
-                        cache_lse = cache_lse.squeeze(-1).transpose(-1,-2)
-                    if self.layer_id == 0:
-                        logger.debug(f"{cache_lse.shape=}")
+                        cache_lse = cache_lse.squeeze(-1).transpose(-1,-2) # [seqlen, head, 1] -> [head, seqlen]
                     out, lse = update_out_and_lse(out, lse, cache_out, cache_lse)
+                    if lse.dim() == 4:
+                        lse = lse.squeeze(-1).transpose(-1,-2)
+                    
                     
         
         # ================== 2. Get First KV Chunk ======================= 
@@ -327,13 +330,12 @@ class proAttention:
         for inter_node_step in range(num_large_ring):
             for intra_node_step in range(small_ring_stride):
                 if intra_node_step + 1 != small_ring_stride: 
+                    # logger.info(f"{timestep}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}, trying to send {key.shape=}, {value.shape=}, {cu_seqlens_kv.shape=}")
                     next_k, next_v, next_cu_seqlens_kv = self.async_ring_p2p_commit(
                         (key, value, cu_seqlens_kv),
                         src_rank=intra_prev_rank,
                         dst_rank=intra_next_rank,
                     )
-                    if get_timestep() > 4 and self.global_rank==14:
-                        logger.debug(f"{get_timestep()}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}")
                 elif inter_node_step + 1 != num_large_ring:
                     
                     next_k, next_v, next_cu_seqlens_kv = self.async_ring_p2p_commit(
@@ -341,7 +343,8 @@ class proAttention:
                         src_rank=inter_prev_rank,
                         dst_rank=inter_next_rank,
                     )
-                    
+                
+                # logger.debug(f"{timestep}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {query.shape=}, {key.shape=}, {value.shape=}, {cu_seqlens_q=}, {cu_seqlens_kv=}, {max_seqlen_q=}, {max_seqlen_kv=}")
                 block_out, block_lse, _  = flash_attn_varlen_func(
                         query,
                         key,
@@ -354,7 +357,7 @@ class proAttention:
                         return_attn_probs=True,
                     )
                 
-                if local_block_id == target_block_id and intra_node_step == 0 and inter_node_step ==0:  # 计算了自身
+                if local_block_id == target_block_id and intra_node_step == 0 and inter_node_step == 0:  # 计算了自身
                     out, lse = update_out_and_lse(out, lse, block_out, block_lse) # 直接更新，不做储存
                 else:
                     fresh_out, fresh_lse = update_out_and_lse(fresh_out, fresh_lse, block_out, block_lse)
@@ -363,7 +366,7 @@ class proAttention:
                 
                 if intra_node_step + 1 != small_ring_stride or inter_node_step + 1 != num_large_ring:
                     key, value, cu_seqlens_kv = self.async_ring_p2p_wait_and_update((next_k, next_v, next_cu_seqlens_kv))
-                    
+                    # logger.info(f"{timestep}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}, Succesfully recv {key.shape=}, {value.shape=}, {cu_seqlens_kv.shape=}")
                 # =============== 4. Update Cache ================
                 if finished_chunk_cnt == num_chunks_to_update: # 完成了本block的计算 
                     if fresh_lse is not None:
@@ -380,17 +383,17 @@ class proAttention:
                     finished_chunk_cnt = 0
                     
         # ================= 5. Cache Management =================
-        if self.layer_id == 0:
-            logger.info(f"Before merge, {next_isp_stride=}")
-            self.cache.report_cache_status(self.layer_id)
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
+        if self.layer_id == 0 and self.global_rank == 0:
+            print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
+            self.cache.report_cache_status(self.layer_id)
                     
-        if self.global_rank == 0 and get_timestep() == 0 and self.layer_id == 10:
-            logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
+        # if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
+        #     logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
        
         stride_map = get_stride_map()
-        stride_map.record_out_redundancy(timestep=get_timestep(),
+        stride_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,
                                             curr_out=out)
         return out
