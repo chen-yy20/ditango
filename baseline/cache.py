@@ -35,9 +35,9 @@ class DistriFusionKVCache:
         else:
             return False
         
-        # if self.timestep + 1 >= self.num_timesteps:
+        # if get_timestep() + 1 >= self.num_timesteps:
         #     return False
-        # return get_stride_map().get_next_isp_stride(self.timestep, layer_id) < self.full_sp_size # next step need cache
+        # return get_stride_map().get_next_isp_stride(get_timestep(), layer_id) < self.full_sp_size # next step need cache
     
     def is_cached(self, layer_id: int) -> bool:
         """Check if features for given layer are cached"""
@@ -92,7 +92,7 @@ class DistriFusionKVCache:
             return 
 
         if group is None or group.world_size == 1:
-            # logger.info(f"t{self.timestep} l{layer_id} | Single process, no need to gather")
+            # logger.info(f"t{get_timestep()} l{layer_id} | Single process, no need to gather")
             return 
         # logger.debug("Tried to gather kv")
         # Gather K and V separately
@@ -117,7 +117,7 @@ class DistriFusionKVCache:
     def print_status(self):
         """Print current cache status"""
         status = self.get_cache_status()
-        logger.info(f"Timestep {self.timestep} | Cache: {status}")
+        logger.info(f"Timestep {get_timestep()} | Cache: {status}")
     
     def clear(self):
         """Clear all cached features"""
@@ -126,35 +126,34 @@ class DistriFusionKVCache:
 
 class easyCache:
     def __init__(self):
-       self.timestep = 0
        self.num_layers = get_config().num_layers
        self.num_timesteps = get_config().num_inference_steps
        self.cache = {}
        
    
     def is_important(self):
-        # logger.info(f"{self.timestep}-{layer_id} | {importance=} {self.threshold=}")
+        # logger.info(f"{get_timestep()}-{layer_id} | {importance=} {self.threshold=}")
         timestep = get_timestep()
         if timestep < 3 or timestep > self.num_timesteps - 3:
             return True
         return get_timestep() % 3 == 0
     
     def should_cache(self, layer_id: int):
-        if self.timestep == self.total_steps -1:
+        if get_timestep() == self.total_steps -1:
             return False
         else:
-            next_step_redundancy = int(get_stride_map()[self.timestep + 1, layer_id].item())
+            next_step_redundancy = int(get_stride_map()[get_timestep() + 1, layer_id].item())
             return next_step_redundancy <= self.threshold # will skip
    
     def get_feature(self, layer_id, name):
         if name not in self.cache.keys():
             logger.debug(f"Didn't find tensor {name} in cache")
         if dist.get_rank()==0:
-            logger.info(f"{self.timestep}-{layer_id} | Trying to get feature {name}")
+            logger.info(f"{get_timestep()}-{layer_id} | Trying to get feature {name}")
         cached_feature = self.cache[name][layer_id]
         if cached_feature is None:
             if dist.get_rank():
-                logger.error(f"{self.timestep}-{layer_id} | Get None type cached value.")
+                logger.error(f"{get_timestep()}-{layer_id} | Get None type cached value.")
         return cached_feature
     
     def store_feature(self, layer_id, name, feature):
@@ -162,17 +161,12 @@ class easyCache:
             self.cache[name] = [None] * self.num_layers
         self.cache[name][layer_id] = feature
         if dist.get_rank()==0:
-            logger.info(f"{self.timestep}-{layer_id} | Stored tensor {name} in cache. Mem={torch.cuda.memory_allocated()}")
+            logger.info(f"{get_timestep()}-{layer_id} | Stored tensor {name} in cache. Mem={torch.cuda.memory_allocated()}")
     
     def clear(self):
         logger.warning("============== Clear easyCache =================")
         self.cache.clear()
     
-    def update_timestep(self, timestep: int):
-        """Update current timestep"""
-        self.timestep = timestep
-        if timestep == self.total_steps -1 or timestep == 0: 
-            self.clear()
         
 
 def init_fusion_cache():

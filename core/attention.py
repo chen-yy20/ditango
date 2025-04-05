@@ -27,7 +27,7 @@ class proAttention:
         self.target_chunk_id = self.local_chunk_id // self.isp_size # 初始化chunk的指针，表示计算到了哪个chunk，从0到isp_size-1一直循环
         self.cache = proCache(isp_size=self.isp_size, layer_id=layer_id)
         
-        self.use_overlap_ring = True
+        self.use_overlap_ring = get_config().use_ringfusion
         self.small_ring_stride = 8
         logger.info(f"R{self.global_rank}L{layer_id} | proAttention initialized with ISP size {self.isp_size}")
         
@@ -83,6 +83,7 @@ class proAttention:
         # =================== 0. Memory Check  =================
         curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
         next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
+        
         assert self.isp_size % curr_isp_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for SP size {self.isp_size}"
         self.cache.pass_memory_check(next_isp_stride, self.layer_id)
         

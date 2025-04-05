@@ -37,6 +37,7 @@ class DiTangoConfig:
             'do_cfg_parallel': False,
             
             # Baseline experiment parameters
+            'use_ringfusion': True,
             'use_ulysses': False,
             'use_distrifusion': False,
             
@@ -51,6 +52,9 @@ class DiTangoConfig:
         # Load from config file if provided
         if config_path is not None:
             self.load_from_file(config_path)
+            
+        if not self.config['use_ringfusion']:
+            self.config['stride_dividers'] = [1]
         
         # Process environment variables for distributed training
         self.process_env_vars()

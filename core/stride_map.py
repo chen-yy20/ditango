@@ -907,11 +907,12 @@ def generate_divider_map_with_custom_settings(custom_percentages=None, custom_di
     if torch.distributed.get_rank() != 0:
         return None
     
+    config = get_config()
     # Use config values if custom values are not provided
     if custom_percentages is None:
-        custom_percentages = get_config().stride_percentiles
+        custom_percentages = config.stride_percentiles
     if custom_dividers is None:
-        custom_dividers = get_config().stride_dividers
+        custom_dividers = config.stride_dividers
     
     # Set output directory to logs if not specified
     if output_dir is None:
@@ -932,18 +933,8 @@ def generate_divider_map_with_custom_settings(custom_percentages=None, custom_di
     file_prefix = f"stride_custom_p{percentages_str}_d{dividers_str}"
     
     # Generate and save visualizations
-    visualization_files = stride_map.visualize_divider_map(output_dir=output_dir, file_prefix=file_prefix)
-    
-    # Optionally save the generated divider map
-    save_path = None
-    try:
-        os.makedirs(output_dir, exist_ok=True)
-        save_path = os.path.join(output_dir, f"divider_map_{stride_map.num_timesteps}_{stride_map.num_layers}_{file_prefix}.pt")
-        torch.save(stride_map.divider_map, save_path)
-        logger.info(f"Custom divider map saved to {save_path}")
-        visualization_files['divider_map_file'] = save_path
-    except Exception as e:
-        logger.error(f"Failed to save custom divider map: {str(e)}")
+    if config.use_ringfusion:
+        visualization_files = stride_map.visualize_divider_map(output_dir=output_dir, file_prefix=file_prefix)
     
     logger.info(f"Generated custom divider map with percentages {custom_percentages if custom_percentages else 'default'} and dividers {custom_dividers if custom_dividers else 'default'}")
     

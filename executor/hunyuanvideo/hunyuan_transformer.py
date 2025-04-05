@@ -18,9 +18,11 @@ from hyvideo.modules.modulate_layers import ModulateDiT, modulate, apply_gate
 from hyvideo.modules.token_refiner import SingleTokenRefiner
 
 from ditango.core.parallel_state import get_usp_group
+from ditango.core.config import get_config
 from ditango.utils import split_tensor_uneven, remove_padding_after_gather
 from ditango.logger import init_logger
 from ditango.executor.hunyuanvideo.attention_hunyuan import Hunyuan_DiTangoProcessor
+from ditango.baseline.cache import get_easy_cache, get_fusion_cache
 from ditango.timer import get_timer
 
 logger = init_logger(__name__)
@@ -53,6 +55,7 @@ class MMDoubleStreamBlock(nn.Module):
         head_dim = hidden_size // heads_num
         mlp_hidden_dim = int(hidden_size * mlp_width_ratio)
         self.attn_proc = Hunyuan_DiTangoProcessor(layer_id=layer_id)
+        self.layer_id = layer_id
 
         self.img_mod = ModulateDiT(
             hidden_size,
@@ -199,6 +202,18 @@ class MMDoubleStreamBlock(nn.Module):
         # Apply QK-Norm if needed.
         txt_q = self.txt_attn_q_norm(txt_q).to(txt_v)
         txt_k = self.txt_attn_k_norm(txt_k).to(txt_v)
+        
+        if get_config().use_distrifusion and get_usp_group().world_size > 1:
+            img_k = img_k.contiguous()
+            img_v = img_v.contiguous()
+            txt_k = txt_k.contiguous()
+            txt_v = txt_v.contiguous()
+            
+            
+            img_k = get_usp_group().all_gather(img_k, dim=1)
+            img_v = get_usp_group().all_gather(img_v, dim=1)
+            txt_k = get_usp_group().all_gather(txt_k, dim=1)
+            txt_v = get_usp_group().all_gather(txt_v, dim=1)
 
         # Run actual attention.
         q = torch.cat((img_q, txt_q), dim=1)
@@ -207,6 +222,8 @@ class MMDoubleStreamBlock(nn.Module):
         assert (
             cu_seqlens_q.shape[0] == 2 * img.shape[0] + 1
         ), f"cu_seqlens_q.shape:{cu_seqlens_q.shape}, img.shape[0]:{img.shape[0]}"
+        
+        # exit()
         
         # q.shape=torch.Size([1, 29764, 24, 128]) k.shape=torch.Size([1, 29764, 24, 128]) cu_seqlens_q.shape=torch.Size([3]) cu_seqlens_kv.shape=torch.Size([3]) max_seqlen_q=119056
         # attn = attention(
@@ -220,18 +237,52 @@ class MMDoubleStreamBlock(nn.Module):
         #     max_seqlen_kv=max_seqlen_kv,
         #     batch_size=img_k.shape[0],
         # )
-        attn = self.attn_proc.ringfusion_attn(
-            q,
-            k,
-            v,
-            cu_seqlens_q=cu_seqlens_q,
-            cu_seqlens_kv=cu_seqlens_kv,
-            max_seqlen_q=max_seqlen_q,
-            max_seqlen_kv=max_seqlen_kv,
-            batch_size=img_k.shape[0],
-        )
-        # logger.debug(f"{attn.shape=}")
-        # exit()
+        if get_config().use_distrifusion:
+            logger.debug(f"DISTRIFUSION | q.shape={q.shape} k.shape={k.shape} {cu_seqlens_q=} {cu_seqlens_kv=} {max_seqlen_q=} {max_seqlen_kv=}")
+
+            attn = attention(
+                q,
+                k,
+                v,
+                mode='flash',
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_kv=cu_seqlens_kv,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_kv=max_seqlen_kv,
+                batch_size=img_k.shape[0],
+            )
+        
+        elif get_config().use_easy_cache: 
+            easyCache = get_easy_cache()
+            if not get_easy_cache().is_important():
+                attn = easyCache.get_feature(self.layer_id, name="attn")
+                logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn.shape=}")
+            else:
+                attn = self.attn_proc.ringfusion_attn(
+                    q,
+                    k,
+                    v,
+                    cu_seqlens_q=cu_seqlens_q,
+                    cu_seqlens_kv=cu_seqlens_kv,
+                    max_seqlen_q=max_seqlen_q,
+                    max_seqlen_kv=max_seqlen_kv,
+                    batch_size=img_k.shape[0],
+                )
+                easyCache.store_feature(self.layer_id, name="attn", feature=attn)
+        else:            
+            attn = self.attn_proc.ringfusion_attn(
+                q,
+                k,
+                v,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_kv=cu_seqlens_kv,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_kv=max_seqlen_kv,
+                batch_size=img_k.shape[0],
+            )
+            if get_config().use_easy_cache:
+                get_easy_cache().store_feature(self.layer_id, name="attn", feature=attn)
+        
         img_attn, txt_attn = attn[:, : img.shape[1]], attn[:, img.shape[1] :]
 
         # Calculate the img bloks.
@@ -291,6 +342,7 @@ class MMSingleStreamBlock(nn.Module):
         self.mlp_hidden_dim = mlp_hidden_dim
         self.scale = qk_scale or head_dim ** -0.5
         self.attn_proc = Hunyuan_DiTangoProcessor(layer_id=layer_id)
+        self.layer_id = layer_id
 
         # qkv and mlp_in
         self.linear1 = nn.Linear(
@@ -363,8 +415,23 @@ class MMSingleStreamBlock(nn.Module):
                 img_qq.shape == img_q.shape and img_kk.shape == img_k.shape
             ), f"img_kk: {img_qq.shape}, img_q: {img_q.shape}, img_kk: {img_kk.shape}, img_k: {img_k.shape}"
             img_q, img_k = img_qq, img_kk
-            q = torch.cat((img_q, txt_q), dim=1)
-            k = torch.cat((img_k, txt_k), dim=1)
+        
+        if get_config().use_distrifusion and get_usp_group().world_size > 1:
+            img_v, txt_v = v[:, :-txt_len, :, :], v[:, -txt_len:, :, :]
+            img_k = img_k.contiguous()
+            img_v = img_v.contiguous()
+            txt_k = txt_k.contiguous()
+            txt_v = txt_v.contiguous()
+            
+            img_k = get_usp_group().all_gather(img_k, dim=1)
+            txt_k = get_usp_group().all_gather(txt_k, dim=1)
+            img_v = get_usp_group().all_gather(img_v, dim=1)
+            txt_v = get_usp_group().all_gather(txt_v, dim=1)
+            v = torch.cat((img_v, txt_v), dim=1)
+        
+        q = torch.cat((img_q, txt_q), dim=1)
+        k = torch.cat((img_k, txt_k), dim=1)
+        
 
         # Compute attention.
         assert (
@@ -381,17 +448,46 @@ class MMSingleStreamBlock(nn.Module):
         #     max_seqlen_kv=max_seqlen_kv,
         #     batch_size=x.shape[0],
         # )
-
-        attn = self.attn_proc.ringfusion_attn(
+        if get_config().use_distrifusion:
+            attn = attention(
             q,
             k,
             v,
+            mode='flash',
             cu_seqlens_q=cu_seqlens_q,
             cu_seqlens_kv=cu_seqlens_kv,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_kv=max_seqlen_kv,
             batch_size=x.shape[0],
         )
+        elif get_config().use_easy_cache: 
+            easyCache = get_easy_cache()
+            if not get_easy_cache().is_important():
+                attn = easyCache.get_feature(self.layer_id, name="attn")
+                logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn.shape=}")
+            else:
+                attn = self.attn_proc.ringfusion_attn(
+                    q,
+                    k,
+                    v,
+                    cu_seqlens_q=cu_seqlens_q,
+                    cu_seqlens_kv=cu_seqlens_kv,
+                    max_seqlen_q=max_seqlen_q,
+                    max_seqlen_kv=max_seqlen_kv,
+                    batch_size=img_k.shape[0],
+                )
+                easyCache.store_feature(self.layer_id, name="attn", feature=attn)
+        else:
+            attn = self.attn_proc.ringfusion_attn(
+                q,
+                k,
+                v,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_kv=cu_seqlens_kv,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_kv=max_seqlen_kv,
+                batch_size=x.shape[0],
+            )
 
 
         # Compute activation in mlp stream, cat again and run second linear layer.
@@ -654,6 +750,11 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
         
         # img.shape=torch.Size([1, 118800, 3072]) txt.shape=torch.Size([1, 256, 3072])
         # ditango Adapt 4
+        if get_config().use_distrifusion:
+            full_cu_seqlens_kv = get_cu_seqlens(text_mask, img.shape[1])
+            full_max_seqlen_kv = full_cu_seqlens_kv[-1]
+            logger.debug(f"full_cu_seqlens_kv: {full_cu_seqlens_kv} full_max_seqlen_kv: {full_max_seqlen_kv}")
+            
         if get_usp_group().world_size > 1:
             img = split_tensor_uneven(img, get_usp_group().world_size, dim=1, tensor_name='img')[get_usp_group().rank_in_group]
             txt = split_tensor_uneven(txt, get_usp_group().world_size, dim=1, tensor_name='txt')[get_usp_group().rank_in_group]
@@ -674,8 +775,13 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
         max_seqlen_kv = max_seqlen_q
 
         freqs_cis = (freqs_cos, freqs_sin) if freqs_cos is not None else None
-        # logger.debug(f"{img.shape=} {txt.shape=} {freqs_cis[0].shape=}")
-        # exit()
+        
+        if get_config().use_distrifusion:
+            cu_seqlens_kv = full_cu_seqlens_kv
+            max_seqlen_kv = full_max_seqlen_kv
+
+        # logger.debug(f"{img.shape=} {txt.shape=} {freqs_cis[0].shape=} {cu_seqlens_q=} {cu_seqlens_kv=} {max_seqlen_q=} {max_seqlen_kv=}")
+   
         # 8卡： img.shape=torch.Size([1, 29700, 3072]) txt.shape=torch.Size([1, 64, 3072]) freqs_cis[0].shape=torch.Size([29700, 128])
         # --------------------- Pass through DiT blocks ------------------------
         for _, block in enumerate(self.double_blocks):
