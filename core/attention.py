@@ -84,6 +84,10 @@ class proAttention:
         curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
         next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
         
+        # self.cache.pass_memory_constraint(next_isp_stride)
+        if not self.cache.pass_memory_check(next_isp_stride, self.layer_id):
+            next_isp_stride = self.isp_size
+            
         assert self.isp_size % curr_isp_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for SP size {self.isp_size}"
         self.cache.pass_memory_check(next_isp_stride, self.layer_id)
         
@@ -101,8 +105,8 @@ class proAttention:
                 # if self.layer_id == 0:
                 #     logger.debug(f"{timestep}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
                 if cache_lse is not None:
-                    if cache_lse.dim() == 4:
-                        cache_lse = cache_lse.squeeze(-1).transpose(-1,-2)
+                    # if cache_lse.dim() == 4:
+                    #     cache_lse = cache_lse.squeeze(-1).transpose(-1,-2)
                     out, lse = update_out_and_lse(out, lse, cache_out, cache_lse)
                     
         
@@ -113,7 +117,7 @@ class proAttention:
             block_id_stride = (target_block_id - local_block_id) % total_block_num # 接收block和当前block的距离
             send_block_id = (local_block_id - block_id_stride) % total_block_num # 发送block的id    
             inner_block_rank = self.local_chunk_id % curr_isp_stride # 当前进程在block内的rank
-           
+        
             recv_rank = target_block_id * curr_isp_stride + inner_block_rank
             send_rank = send_block_id * curr_isp_stride + inner_block_rank
             
@@ -213,7 +217,7 @@ class proAttention:
                     
         if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
             logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
-       
+    
         stride_map = get_stride_map()
         stride_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,
@@ -268,8 +272,8 @@ class proAttention:
                 # if self.layer_id == 0:
                 #     logger.debug(f"{timestep}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
                 if cache_lse is not None:
-                    if cache_lse.dim() == 4:
-                        cache_lse = cache_lse.squeeze(-1).transpose(-1,-2) # [seqlen, head, 1] -> [head, seqlen]
+                    # if cache_lse.dim() == 4:
+                    #     cache_lse = cache_lse.squeeze(-1).transpose(-1,-2) # [seqlen, head, 1] -> [head, seqlen]
                     out, lse = update_out_and_lse(out, lse, cache_out, cache_lse)
                     if lse.dim() == 4:
                         lse = lse.squeeze(-1).transpose(-1,-2)

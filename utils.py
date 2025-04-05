@@ -46,12 +46,30 @@ def update_out_and_lse(
     block_lse: torch.Tensor,
     slice_=None,
   ) -> Tuple[torch.Tensor, torch.Tensor]:
-    # lse shape should be [seq_len, head, 1]
-    # block lse shape should be [head, seqlen]
-    if block_lse.dim() == 3: # [seqlen, head, 1]
-            block_lse = block_lse.squeeze(-1).transpose(-1,-2) # switch to standard input shape: [head, seqlen]
-    if lse is not None and lse.dim() == 4:
-        lse = lse.squeeze(-1).transpose(-1,-2) # [seqlen, head, 1]
+    # lse shape should be [b, seq_len, head, 1]
+    # block lse shape should be [b, head, seqlen]
+    # if out is not None:
+    #     logger.debug(f"update_out_and_lse: {out.shape=} {lse.shape=} {block_out.shape=} {block_lse.shape=}")
+    # else:
+    #     logger.debug(f"update_out_and_lse: {block_out.shape=} {block_lse.shape=}")
+        
+    if block_lse is not None and block_lse.shape[-1] == 1:
+        # assert block_lse.shape[-1] == 1, f"block_lse supposed to be [b, head, seqlen, 1] or [b, head, seqlen], but got {block_lse.shape=}"
+        block_lse = block_lse.squeeze(-1).transpose(-1,-2) # switch to standard input shape: [b, head, seqlen]
+        
+    if lse is not None and lse.shape[-1] != 1:
+        lse = lse.transpose(-2, -1).unsqueeze(dim=-1) # [b, head, seqlen] -> [b, seqlen, head, 1]
+        
+    # if block_lse.dim() == 3: # [seqlen, head, 1]
+    #         block_lse = block_lse.squeeze(-1).transpose(-1,-2) # switch to standard input shape: [head, seqlen]
+    # if lse is not None and lse.dim() == 4:
+    #     lse = lse.squeeze(-1).transpose(-1,-2) # [seqlen, head, 1]
+        
+    # if out is not None:
+    #     logger.debug(f"update_out_and_lse after squeeze: {out.shape=} {lse.shape=} {block_out.shape=} {block_lse.shape=}")
+    # else:
+    #     logger.debug(f"update_out_and_lse after squeeze: {block_out.shape=} {block_lse.shape=}")
+        
     if out is None:
       if slice_ is not None:
         raise RuntimeError("first update_out_and_lse should not pass slice_ args")

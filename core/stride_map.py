@@ -633,8 +633,11 @@ def print_stride_map(logger=None):
         return
         
     divider_map = stride_map.divider_map
-    base_weight_map = torch.ones_like(divider_map) * get_usp_group().world_size
-    stride_values = base_weight_map // divider_map
+    world_size = get_usp_group().world_size
+    base_weight_map = torch.ones_like(divider_map) * world_size
+    # 确保 divider_map 不会超过 base_weight_map
+    clamped_divider_map = torch.clamp_max(divider_map, world_size)
+    stride_values = base_weight_map // clamped_divider_map
     
     # Format the output as a readable text grid
     formatted_output = '\n'.join([' '.join([f"{int(num):2d}" for num in row]) for row in stride_values.cpu().numpy()])
