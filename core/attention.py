@@ -27,9 +27,10 @@ class proAttention:
         self.target_chunk_id = self.local_chunk_id // self.isp_size # 初始化chunk的指针，表示计算到了哪个chunk，从0到isp_size-1一直循环
         self.cache = proCache(isp_size=self.isp_size, layer_id=layer_id)
         
-        self.use_overlap_ring = get_config().use_ringfusion
+        self.use_ringfusion = get_config().use_ringfusion
         self.small_ring_stride = 8
-        logger.info(f"R{self.global_rank}L{layer_id} | proAttention initialized with ISP size {self.isp_size}")
+        if self.layer_id == 0:
+            logger.info(f"R{self.global_rank}L{layer_id} | Using RingFusion Attn.")
         
     def async_ring_p2p_commit(self, tensors: Tuple[torch.Tensor, ...], src_rank: int, dst_rank: int):
         """Set up ring communication for sending and receiving tensors asynchronously.
@@ -89,7 +90,6 @@ class proAttention:
             next_isp_stride = self.isp_size
             
         assert self.isp_size % curr_isp_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for SP size {self.isp_size}"
-        self.cache.pass_memory_check(next_isp_stride, self.layer_id)
         
         total_block_num = self.isp_size // curr_isp_stride
         local_block_id = self.local_chunk_id // curr_isp_stride # 当前进程属于哪个block
@@ -105,8 +105,6 @@ class proAttention:
                 # if self.layer_id == 0:
                 #     logger.debug(f"{timestep}-{self.layer_id} | trying to get {cached_block_id=}, {total_block_num=}")
                 if cache_lse is not None:
-                    # if cache_lse.dim() == 4:
-                    #     cache_lse = cache_lse.squeeze(-1).transpose(-1,-2)
                     out, lse = update_out_and_lse(out, lse, cache_out, cache_lse)
                     
         
@@ -143,7 +141,7 @@ class proAttention:
         
         num_large_ring = 1
         small_ring_stride = curr_isp_stride
-        if curr_isp_stride > self.small_ring_stride and self.use_overlap_ring:
+        if curr_isp_stride > self.small_ring_stride and self.use_ringfusion:
             assert curr_isp_stride % self.small_ring_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for overlap ring strategy"
             num_large_ring = curr_isp_stride // self.small_ring_stride
             small_ring_stride = self.small_ring_stride
@@ -166,8 +164,8 @@ class proAttention:
                         src_rank=intra_prev_rank,
                         dst_rank=intra_next_rank,
                     )
-                    if timestep > 4 and self.global_rank==14:
-                        logger.debug(f"{timestep}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}")
+                    # if timestep > 4 and self.global_rank==14:
+                    #     logger.debug(f"{timestep}-{self.layer_id} |IR-{self.local_chunk_id} | SMALL_STEP {intra_node_step} |  {intra_prev_rank} -> rank:{self.local_chunk_id} -> {intra_next_rank}")
                 elif inter_node_step + 1 != num_large_ring:
                     
                     next_k, next_v = self.async_ring_p2p_commit(
@@ -210,10 +208,11 @@ class proAttention:
                     finished_chunk_cnt = 0
                     
         # ================= 5. Cache Management =================
-        if self.layer_id == 0:
-            self.cache.report_cache_status(self.layer_id)
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
+        # if self.use_ringfusion and  self.layer_id == 0 and self.global_rank == 0:
+        #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
+        #     self.cache.report_cache_status(self.layer_id)
                     
         if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
             logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
@@ -261,8 +260,6 @@ class proAttention:
         target_block_id = self.target_chunk_id // curr_isp_stride # 表示本轮需要计算的block id
         
         # =================== 1. Update Cached blocks =================
-        if self.layer_id == 0 and self.global_rank == 0:
-            self.cache.report_cache_status(self.layer_id)
         if curr_isp_stride == self.isp_size: # 满，刷新指针, 细粒度存储
             self.target_chunk_id = self.local_chunk_id
         else: # 不满，先更新cached block
@@ -317,7 +314,7 @@ class proAttention:
         
         num_large_ring = 1
         small_ring_stride = curr_isp_stride
-        if curr_isp_stride > self.small_ring_stride and self.use_overlap_ring:
+        if curr_isp_stride > self.small_ring_stride and self.use_ringfusion:
             assert curr_isp_stride % self.small_ring_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for overlap ring strategy"
             num_large_ring = curr_isp_stride // self.small_ring_stride
             small_ring_stride = self.small_ring_stride
@@ -390,9 +387,9 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        if self.layer_id == 0 and self.global_rank == 0:
-            print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
-            self.cache.report_cache_status(self.layer_id)
+        # if self.use_ringfusion and  self.layer_id == 0 and self.global_rank == 0:
+        #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
+        #     self.cache.report_cache_status(self.layer_id)
                     
         # if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
         #     logger.info(f"******************* Processing out_shape: {out.shape=}*******************")

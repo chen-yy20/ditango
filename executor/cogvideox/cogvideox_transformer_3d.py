@@ -156,7 +156,7 @@ class CogVideoXBlock(nn.Module):
             if not easyCache.is_important():
                 attn_hidden_states = easyCache.get_feature(self.layer_id, name="attn")
                 attn_encoder_hidden_states = easyCache.get_feature(self.layer_id, name="attn_encoder")
-                logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn_hidden_states.shape=} {attn_encoder_hidden_states.shape=}")
+                # logger.debug(f"t}l{self.layer_id} | skip, {attn_hidden_states.shape=} {attn_encoder_hidden_states.shape=}")
             else:
                 attn_hidden_states, attn_encoder_hidden_states = self.attn1(
                     hidden_states=norm_hidden_states,

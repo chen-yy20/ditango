@@ -256,7 +256,7 @@ class StrideMap:
                     
                     # Ensure divider is valid for base_weight
                     if self.base_weight < divider:
-                        divider = 1
+                        divider = self.base_weight
                     elif self.base_weight % divider != 0:
                         # Find closest valid divider
                         for d in sorted(dividers):

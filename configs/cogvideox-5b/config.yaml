@@ -29,4 +29,4 @@ use-easy-cache: false
 
 # StrideMap configuration
 stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
-stride-percentiles: [20, 60, 90]  # Percentile thresholds for redundancy mapping
+stride-percentiles: [10, 60, 90]  # Percentile thresholds for redundancy mapping

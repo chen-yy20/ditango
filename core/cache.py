@@ -24,8 +24,6 @@ class proCache:
         self.block_size_mb = None
         self.memory_constraint = 0.7 * torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
         
-        logger.info(f"proCache initialized with ISP size {self.isp_size}")
-        
     def get_curr_isp_stride(self, layer_id: int):
         isp_stride = int(get_stride_map()[get_timestep(), layer_id].item())
         return isp_stride
@@ -52,8 +50,8 @@ class proCache:
         # logger.debug(f"Blocks merged successfully, New cache len {len(self.out_block_cache)}")
         
     def update_cache_blocks(self, new_isp_stride: int, next_target_block_id: int):
-        if self.layer_id == 0:
-            logger.info(f"Updating cache blocks: {self.curr_isp_stride=}, new_isp_stride {new_isp_stride}, next_target_block_id {next_target_block_id}")
+        # if self.layer_id == 0:
+        #     logger.info(f"Updating cache blocks: {self.curr_isp_stride=}, new_isp_stride {new_isp_stride}, next_target_block_id {next_target_block_id}")
         if new_isp_stride == self.isp_size: # 全面刷新
             self.curr_isp_stride = self.isp_size
             self.curr_block_num = self.isp_size

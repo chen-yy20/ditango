@@ -148,8 +148,8 @@ class easyCache:
     def get_feature(self, layer_id, name):
         if name not in self.cache.keys():
             logger.debug(f"Didn't find tensor {name} in cache")
-        if dist.get_rank()==0:
-            logger.info(f"{get_timestep()}-{layer_id} | Trying to get feature {name}")
+        # if dist.get_rank()==0:
+        #     logger.info(f"{get_timestep()}-{layer_id} | Trying to get feature {name}")
         cached_feature = self.cache[name][layer_id]
         if cached_feature is None:
             if dist.get_rank():
@@ -160,8 +160,8 @@ class easyCache:
         if name not in self.cache.keys():
             self.cache[name] = [None] * self.num_layers
         self.cache[name][layer_id] = feature
-        if dist.get_rank()==0:
-            logger.info(f"{get_timestep()}-{layer_id} | Stored tensor {name} in cache. Mem={torch.cuda.memory_allocated()}")
+        # if dist.get_rank()==0:
+        #     logger.info(f"{get_timestep()}-{layer_id} | Stored tensor {name} in cache. Mem={torch.cuda.memory_allocated()}")
     
     def clear(self):
         logger.warning("============== Clear easyCache =================")
