@@ -81,9 +81,13 @@ class proAttention:
         timestep = get_timestep()
         # block size 就是 isp stride， 每次计算只计算一个block
         
+        
         # =================== 0. Memory Check  =================
         curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
         next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
+        
+        if timestep == 0:
+            self.cache.set_block_size_mb(value)
         
         # self.cache.pass_memory_constraint(next_isp_stride)
         if not self.cache.pass_memory_check(next_isp_stride, self.layer_id):
@@ -210,7 +214,7 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        # if self.use_ringfusion and  self.layer_id == 0 and self.global_rank == 0:
+        # if self.use_ringfusion and  self.global_rank == 0:
         #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
         #     self.cache.report_cache_status(self.layer_id)
                     
