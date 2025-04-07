@@ -87,6 +87,8 @@ class proCache:
     
     def clear(self):
         logger.warning("============== Clear oCache =================")
+        self.out_block_cache = [None] * self.curr_block_num
+        self.lse_block_cache = [None] * self.curr_block_num
         
     def pass_memory_check(self, next_isp_stride: int, layer_id: int):
         if next_isp_stride == self.isp_size:
