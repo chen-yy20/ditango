@@ -270,6 +270,8 @@ class StepVideoTransformerBlock(nn.Module):
             easy_cache = get_easy_cache()
             if not easy_cache.is_important():
                 attn_q = easy_cache.get_feature(self.layer_id, name='attn_q')
+                if self.layer_id == 15:
+                    print(f"get attn_q: {attn_q.shape} and skip.", flush=True)
             else:
                 attn_q = self.attn1(
                     scale_shift_q,

@@ -24,7 +24,7 @@ do-cfg-parallel: false
 # Baseline experiment parameters
 use-ringfusion: false
 use-ulysses: false
-use-distrifusion: true
+use-distrifusion: false
 use-easy-cache: false
 
 # StrideMap configuration
