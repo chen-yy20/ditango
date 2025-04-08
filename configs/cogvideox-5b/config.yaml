@@ -22,9 +22,9 @@ node: null
 do-cfg-parallel: false
 
 # Baseline experiment parameters
-use-ringfusion: true
+use-ringfusion: false
 use-ulysses: false
-use-distrifusion: false
+use-distrifusion: true
 use-easy-cache: false
 
 # StrideMap configuration

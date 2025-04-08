@@ -47,20 +47,21 @@ class CVX_UlyssesAttnProcessor:
         encoder_query = attn.to_q(encoder_hidden_states)
         encoder_key = attn.to_k(encoder_hidden_states)
         encoder_value = attn.to_v(encoder_hidden_states)
-
-        if get_isp_group().world_size > 1:
-            assert attn.heads % get_isp_group().world_size == 0
-            attn_heads = attn.heads // get_isp_group().world_size
-            query, key, value = map(
-                lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=0),
-                [query, key, value],
-            )
-            encoder_query, encoder_key, encoder_value = map(
-                lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=1),
-                [encoder_query, encoder_key, encoder_value],
-            )
-        else:
-            attn_heads = attn.heads
+        
+        with get_timer("A2A_1"):
+            if get_isp_group().world_size > 1:
+                assert attn.heads % get_isp_group().world_size == 0
+                attn_heads = attn.heads // get_isp_group().world_size
+                query, key, value = map(
+                    lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=0),
+                    [query, key, value],
+                )
+                encoder_query, encoder_key, encoder_value = map(
+                    lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=1),
+                    [encoder_query, encoder_key, encoder_value],
+                )
+            else:
+                attn_heads = attn.heads
             
         text_seq_length = encoder_query.size(1)
         query = torch.cat([encoder_query, query], dim=1)
@@ -117,10 +118,14 @@ class CVX_UlyssesAttnProcessor:
         encoder_hidden_states, hidden_states = hidden_states.split(
             [text_seq_length, hidden_states.size(1) - text_seq_length], dim=1)
 
+        with get_timer("A2A_2"):
+            if get_isp_group().world_size > 1:
+                hidden_states = get_isp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)
+                encoder_hidden_states = get_isp_group().uneven_all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=1)
         # logger.debug(f"3:{hidden_states.shape=} {encoder_hidden_states.shape=}")
-        if get_isp_group().world_size > 1:
-            hidden_states = get_isp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)
-            encoder_hidden_states = get_isp_group().uneven_all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=1)
+        # if get_isp_group().world_size > 1:
+        #     hidden_states = get_isp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)
+        #     encoder_hidden_states = get_isp_group().uneven_all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=1)
         # logger.debug(f"4:{hidden_states.shape=} {encoder_hidden_states.shape=}")
         # Linear projections and dropout
         hidden_states = attn.to_out[0](hidden_states)

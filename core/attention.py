@@ -84,7 +84,8 @@ class proAttention:
         # =================== 0. Memory Check  =================
         curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
         next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
-        
+        if timestep == 0:
+            self.cache.set_block_size_mb(value)
         # self.cache.pass_memory_constraint(next_isp_stride)
         if not self.cache.pass_memory_check(next_isp_stride, self.layer_id):
             next_isp_stride = self.isp_size
@@ -216,7 +217,7 @@ class proAttention:
                     
         if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
             logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
-    
+        
         stride_map = get_stride_map()
         stride_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,

@@ -78,37 +78,38 @@ class CVX_DistriFusion_AttnProcessor:
         cached_value = None
         # k、v gather
         # ========== ISP gather ===========
-        if not self.cache.is_cached(self.layer_id):
-            fresh_key = self.group.all_gather(key, dim=1)
-            fresh_value = self.group.all_gather(value, dim=1)
-            # logger.debug(f"t{timestep} l{self.layer_id}| After ISP gather: key.shape={fresh_key.shape}, value.shape={fresh_value.shape}")
-        else:
-            cached_key = self.cache.get_kv(self.layer_id)['k']
-            cached_value = self.cache.get_kv(self.layer_id)['v']
-            cached_key = self.group.all_gather(cached_key, dim=1)
-            cached_value = self.group.all_gather(cached_value, dim=1)
-            
-            # logger.debug(f"t{timestep} l{self.layer_id}| No ISP gather: key.shape={fresh_key.shape}, value.shape={fresh_value.shape}")
-        # ========== Cache fetch ===========
-        # cache_dict = self.cache.get_kv(self.layer_id)
-        # if cache_dict is not None:
-        #     cache_key = cache_dict['k']
-        #     cache_value = cache_dict['v']
-            # logger.debug(f"t{timestep} l{self.layer_id}| After Cache fetch: cache_key.shape={cache_key.shape}, cache_value.shape={cache_value.shape}")
-        # ========== Cache Store ===========
-        self.cache.store(self.layer_id, fresh_key, fresh_value)
-        # ========== cat ===========
-        if cached_key is not None:
-            cached_key_list= split_tensor_uneven(cached_key, self.group.world_size, dim=1)
-            cached_value_list= split_tensor_uneven(cached_value, self.group.world_size, dim=1)
-            cached_key_list[self.group.rank_in_group] = fresh_key
-            cached_value_list[self.group.rank_in_group] = fresh_value
-            key = torch.cat(cached_key_list, dim=1)
-            value = torch.cat(cached_value_list, dim=1)
-            # logger.info(f"t{timestep} l{self.layer_id}| After cat: key.shape={key.shape}, value.shape={value.shape}")
-        else:
-            key = fresh_key
-            value = fresh_value
+        with get_timer("df_allgather"):
+            if not self.cache.is_cached(self.layer_id):
+                fresh_key = self.group.all_gather(key, dim=1)
+                fresh_value = self.group.all_gather(value, dim=1)
+                # logger.debug(f"t{timestep} l{self.layer_id}| After ISP gather: key.shape={fresh_key.shape}, value.shape={fresh_value.shape}")
+            else:
+                cached_key = self.cache.get_kv(self.layer_id)['k']
+                cached_value = self.cache.get_kv(self.layer_id)['v']
+                cached_key = self.group.all_gather(cached_key, dim=1)
+                cached_value = self.group.all_gather(cached_value, dim=1)
+                
+                # logger.debug(f"t{timestep} l{self.layer_id}| No ISP gather: key.shape={fresh_key.shape}, value.shape={fresh_value.shape}")
+            # ========== Cache fetch ===========
+            # cache_dict = self.cache.get_kv(self.layer_id)
+            # if cache_dict is not None:
+            #     cache_key = cache_dict['k']
+            #     cache_value = cache_dict['v']
+                # logger.debug(f"t{timestep} l{self.layer_id}| After Cache fetch: cache_key.shape={cache_key.shape}, cache_value.shape={cache_value.shape}")
+            # ========== Cache Store ===========
+            self.cache.store(self.layer_id, key, value)
+            # ========== cat ===========
+            if cached_key is not None:
+                cached_key_list= split_tensor_uneven(cached_key, self.group.world_size, dim=1)
+                cached_value_list= split_tensor_uneven(cached_value, self.group.world_size, dim=1)
+                cached_key_list[self.group.rank_in_group] = fresh_key
+                cached_value_list[self.group.rank_in_group] = fresh_value
+                key = torch.cat(cached_key_list, dim=1)
+                value = torch.cat(cached_value_list, dim=1)
+                # logger.info(f"t{timestep} l{self.layer_id}| After cat: key.shape={key.shape}, value.shape={value.shape}")
+            else:
+                key = fresh_key
+                value = fresh_value
         # logger.info(f"t{timestep} l{self.layer_id}| After cat: key.shape={key.shape}, value.shape={value.shape}")
 
         total_seq_len_q = query.size(1)  # s/sp

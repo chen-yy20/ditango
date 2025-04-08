@@ -87,7 +87,21 @@ class proCache:
     
     def clear(self):
         logger.warning("============== Clear oCache =================")
+    
+    def set_block_size_mb(self, tensor):
+        original_shape = list(tensor.shape)
         
+        new_shape = original_shape.copy()
+        new_shape[-1] += 1
+        
+        expanded_tensor = torch.zeros(new_shape, dtype=torch.float32, device=tensor.device)
+        
+        if self.block_size_mb is None:
+            block_size_mb = expanded_tensor.element_size() * expanded_tensor.nelement() / (1024 ** 2)
+            self.block_size_mb = block_size_mb
+        logger.debug(f"{expanded_tensor.shape=} | Block size MB: {self.block_size_mb}")
+        return self.block_size_mb
+    
     def pass_memory_check(self, next_isp_stride: int, layer_id: int):
         if next_isp_stride == self.isp_size:
             return True
