@@ -87,6 +87,7 @@ class StepVideoPipeline(DiffusionPipeline):
     ):
         super().__init__()
 
+        save_path = "./oresult"
         self.register_modules(
             transformer=transformer,
             scheduler=scheduler,

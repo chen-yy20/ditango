@@ -16,11 +16,8 @@ from torch import nn
 import os
 from einops import rearrange, repeat
 from stepvideo.utils import with_empty_init
-# from stepvideo.parallel import parallel_forward
-from stepvideo.modules.blocks import (
-        # StepVideoTransformerBlock, 
-        PatchEmbed
-    )
+# # from stepvideo.parallel import parallel_forward
+# from stepvideo.modules.blocks import PatchEmbed
 from stepvideo.modules.normalization import (
         PixArtAlphaTextProjection,
         AdaLayerNormSingle
@@ -30,7 +27,7 @@ from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.modeling_utils import ModelMixin
 
 from ditango.executor.stepvideo.parallel import parallel_forward
-from ditango.executor.stepvideo.blocks import StepVideoTransformerBlock
+from ditango.executor.stepvideo.blocks import StepVideoTransformerBlock, PatchEmbed
 from ditango.timer import get_timer
 
 

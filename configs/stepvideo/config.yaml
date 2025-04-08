@@ -22,11 +22,11 @@ node: null
 do-cfg-parallel: false
 
 # Baseline experiment parameters
-use-ringfusion: true
+use-ringfusion: false
 use-ulysses: false
-use-distrifusion: false
+use-distrifusion: true
 use-easy-cache: false
 
 # StrideMap configuration
 stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
-stride-percentiles: [0, 30, 75]  # Percentile thresholds for redundancy mapping
+stride-percentiles: [0, 0, 90]  # Percentile thresholds for redundancy mapping

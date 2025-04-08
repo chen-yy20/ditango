@@ -1,10 +1,17 @@
 import torch
 import torch.nn as nn
 from einops import rearrange
+from flash_attn import flash_attn_func
 
 from ditango.core.parallel_state import get_isp_group
 from ditango.core.attention import proAttention
 from ditango.logger import init_logger
+from ditango.core.config import get_config
+from ditango.baseline.cache import get_fusion_cache
+from ditango.utils import get_timestep, split_tensor_uneven
+from ditango.timer import get_timer
+
+
 
 try:
     from xfuser.core.long_ctx_attention import xFuserLongContextAttention
@@ -17,17 +24,22 @@ logger = init_logger(__name__)
 class Attention(nn.Module):
     def __init__(self, layer_id = -1):
         super().__init__()
-        self.oAttn = proAttention(layer_id, get_isp_group())
+        self.config = get_config()
+        self.layer_id = layer_id
+        if not self.config.use_distrifusion:
+            self.oAttn = proAttention(layer_id, get_isp_group())
     
     def attn_processor(self, attn_type):
         if attn_type == 'torch':
             return self.torch_attn_func
         elif attn_type == 'parallel':
             return self.parallel_attn_func
-        elif attn_type == 'ditango':
-            return self.o_attn_func
+        elif self.config.use_distrifusion:
+            return self.distrifusion_attn_func
         else:
-            raise Exception('Not supported attention type...')
+            return self.o_attn_func
+        # else:
+        #     raise Exception('Not supported attention type...')
 
     def torch_attn_func(
         self,
@@ -86,3 +98,47 @@ class Attention(nn.Module):
         x = x.to(q.dtype)
         
         return x
+
+    def distrifusion_attn_func(
+        self,
+        q,
+        k,
+        v,
+        causal=False,
+        **kwargs
+    ):
+        timestep = get_timestep()
+        cache = get_fusion_cache()
+        
+        with get_timer("df_comm"):
+            kv_dict = cache.get_kv(self.layer_id)
+            if kv_dict is None or timestep < 1: #full
+                k = k.contiguous()
+                v = v.contiguous()
+                new_k = get_isp_group().all_gather(k, dim=1)
+                new_v = get_isp_group().all_gather(v, dim=1)
+                cache.store(self.layer_id, k, v)
+            else:
+                cached_k = kv_dict['k'].contiguous()
+                cached_v = kv_dict['v'].contiguous()
+                logger.debug(f"L{self.layer_id} | cached_k shape: {cached_k.shape}, cached_v shape: {cached_v.shape}")
+                cache.store(self.layer_id, k, v)
+                stale_k = get_isp_group().all_gather(cached_k, dim=1)
+                stale_v = get_isp_group().all_gather(cached_v, dim=1)
+                stale_k_list = split_tensor_uneven(stale_k, get_isp_group().world_size, dim=1)
+                stale_v_list = split_tensor_uneven(stale_v, get_isp_group().world_size, dim=1)
+                stale_k_list[get_isp_group().rank_in_group] = k
+                stale_v_list[get_isp_group().rank_in_group] = v
+                new_k = torch.cat(stale_k_list, dim=1)
+                new_v = torch.cat(stale_v_list, dim=1)
+            
+        # logger.debug(f"{q.shape=}, new_k shape: {new_k.shape}, new_v shape: {new_v.shape}")
+        x = flash_attn_func(
+            q,
+            new_k,
+            new_v,
+        )
+        x = x.to(q.dtype)
+        
+        return x
+    

@@ -19,8 +19,10 @@ from einops import rearrange
 from stepvideo.modules.normalization import RMSNorm
 
 from ditango.timer import get_timer
+from ditango.core.config import get_config
 from ditango.executor.stepvideo.rope import RoPE3D
 from ditango.executor.stepvideo.attentions import Attention
+from ditango.baseline.cache import get_easy_cache
 
 
 class SelfAttention(Attention):
@@ -71,7 +73,7 @@ class SelfAttention(Attention):
         if self.with_rope:
             xq = self.apply_rope3d(xq, rope_positions, self.rope_ch_split, parallel=self.parallel)
             xk = self.apply_rope3d(xk, rope_positions, self.rope_ch_split, parallel=self.parallel)
-            
+
         output = self.core_attention(
                     xq,
                     xk,
@@ -246,6 +248,7 @@ class StepVideoTransformerBlock(nn.Module):
         self.ff = FeedForward(dim=dim, inner_dim=ff_inner_dim, dim_out=dim, bias=ff_bias)
 
         self.scale_shift_table = nn.Parameter(torch.randn(6, dim) /dim**0.5)
+        self.layer_id = layer_id
 
     @get_timer("block")
     @torch.no_grad()
@@ -262,11 +265,22 @@ class StepVideoTransformerBlock(nn.Module):
         )
         
         scale_shift_q = modulate(self.norm1(q), scale_msa, shift_msa)
-
-        attn_q = self.attn1(
-            scale_shift_q,
-            rope_positions=rope_positions
-        )
+        
+        if get_config().use_easy_cache:
+            easy_cache = get_easy_cache()
+            if not easy_cache.is_important():
+                attn_q = easy_cache.get_feature(self.layer_id, name='attn_q')
+            else:
+                attn_q = self.attn1(
+                    scale_shift_q,
+                    rope_positions=rope_positions
+                )
+                easy_cache.store_feature(self.layer_id, name='attn_q', feature=attn_q)
+        else:
+            attn_q = self.attn1(
+                scale_shift_q,
+                rope_positions=rope_positions
+            )
 
         q = gate(attn_q, gate_msa) + q
         attn_q = self.attn2(

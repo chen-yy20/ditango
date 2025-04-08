@@ -2,7 +2,7 @@ import torch.distributed as dist
 # import xfuser
 import torch
 import os
-from ditango.core.parallel_state import init_distributed_environment, init_model_parallel, get_world_group, generate_parallel_groups, get_usp_group
+from ditango.core.parallel_state import get_world_group, get_usp_group
 from ditango.utils import split_tensor_uneven, remove_padding_after_gather
 
 def initialize_parall_group():

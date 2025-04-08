@@ -295,6 +295,9 @@ class StrideMap:
             for t in range(1, self.num_timesteps):
                 current_val = self.divider_map[t, layer].item()
                 prev_val = self.divider_map[t-1, layer].item()
+                if t < 3 or t > self.num_timesteps - 3:
+                    self.divider_map[t, layer] = 1
+                    continue
                 
                 # Check if transition is valid
                 # Case 1: Previous value is 1, can transition to any value

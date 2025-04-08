@@ -55,6 +55,7 @@ class DistriFusionKVCache:
         if not self.should_cache(layer_id):
             return
         # Store detached copies of key and value
+        # logger.debug(f"Storing KV for layer {layer_id} at timestep {get_timestep()}")
         self.cache[layer_id] = {
             "k": key.detach().clone(),
             "v": value.detach().clone()
