@@ -3,7 +3,7 @@
 # Basic parameters
 model-name: cogvideox-5b
 ditango-base: ./ditango/
-output-fn: ./result/
+output-fn: ./Tango_evaluate/df
 tag: test
 
 # Generation parameters
@@ -29,4 +29,4 @@ use-easy-cache: false
 
 # StrideMap configuration
 stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
-stride-percentiles: [10, 60, 90]  # Percentile thresholds for redundancy mapping
+stride-percentiles: [0, 40, 90]  # Percentile thresholds for redundancy mapping

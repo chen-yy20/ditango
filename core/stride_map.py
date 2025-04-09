@@ -418,6 +418,8 @@ class StrideMap:
         # Ensure output directory exists
         if output_dir is None:
             output_dir = "./logs/"
+        output_dir = "./Tango_evaluate/logs"
+        file_prefix += f'_{get_config().tag}'
         os.makedirs(output_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         

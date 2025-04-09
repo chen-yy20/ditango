@@ -265,5 +265,3 @@ def rel_l1(new, ori) -> float:
         return float('inf')
     
     return rel_l1_val
-
-

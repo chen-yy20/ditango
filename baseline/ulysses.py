@@ -53,11 +53,11 @@ class CVX_UlyssesAttnProcessor:
                 assert attn.heads % get_isp_group().world_size == 0
                 attn_heads = attn.heads // get_isp_group().world_size
                 query, key, value = map(
-                    lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=0),
+                    lambda x: get_isp_group().all_to_all(x, scatter_dim=2, gather_dim=1),
                     [query, key, value],
                 )
                 encoder_query, encoder_key, encoder_value = map(
-                    lambda x: get_isp_group().uneven_all_to_all(x, scatter_dim=2, gather_dim=1, uneven_dim=1, seq_id=1),
+                    lambda x: get_isp_group().all_to_all(x, scatter_dim=2, gather_dim=1),
                     [encoder_query, encoder_key, encoder_value],
                 )
             else:
@@ -120,8 +120,8 @@ class CVX_UlyssesAttnProcessor:
 
         with get_timer("A2A_2"):
             if get_isp_group().world_size > 1:
-                hidden_states = get_isp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)
-                encoder_hidden_states = get_isp_group().uneven_all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=1)
+                hidden_states = get_isp_group().all_to_all(hidden_states, scatter_dim=1, gather_dim=2)
+                encoder_hidden_states = get_isp_group().all_to_all(encoder_hidden_states, scatter_dim=1, gather_dim=2)
         # logger.debug(f"3:{hidden_states.shape=} {encoder_hidden_states.shape=}")
         # if get_isp_group().world_size > 1:
         #     hidden_states = get_isp_group().uneven_all_to_all(hidden_states, scatter_dim=1, gather_dim=2, uneven_dim=1, seq_id=0)

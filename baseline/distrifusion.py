@@ -23,6 +23,7 @@ class CVX_DistriFusion_AttnProcessor:
         self.layer_id = layer_id
         self.group = isp_group
         self.cache = get_fusion_cache()
+        self.measure_memory = True
 
     @get_timer("DF Attn")
     def __call__(
@@ -36,6 +37,8 @@ class CVX_DistriFusion_AttnProcessor:
         text_seq_length = encoder_hidden_states.size(1)
         batch_size = hidden_states.shape[0]
         timestep = get_timestep()
+        if self.measure_memory and timestep == 0:
+            torch.cuda.reset_peak_memory_stats()
 
         hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
         
@@ -79,11 +82,12 @@ class CVX_DistriFusion_AttnProcessor:
         # k、v gather
         # ========== ISP gather ===========
         with get_timer("df_allgather"):
-            if not self.cache.is_cached(self.layer_id):
+            if self.cache.warmup(self.layer_id):
                 fresh_key = self.group.all_gather(key, dim=1)
                 fresh_value = self.group.all_gather(value, dim=1)
                 # logger.debug(f"t{timestep} l{self.layer_id}| After ISP gather: key.shape={fresh_key.shape}, value.shape={fresh_value.shape}")
             else:
+                assert self.cache.is_cached(self.layer_id), f"Cache is not ready but trying to get cached value. timestep={timestep}, layer_id={self.layer_id}"
                 cached_key = self.cache.get_kv(self.layer_id)['k']
                 cached_value = self.cache.get_kv(self.layer_id)['v']
                 cached_key = self.group.all_gather(cached_key, dim=1)
@@ -147,9 +151,11 @@ class CVX_DistriFusion_AttnProcessor:
         # Split back encoder and hidden states
         encoder_hidden_states, hidden_states = hidden_states.split([text_seq_length, hidden_states.size(1) - text_seq_length], dim=1)
 
-        # Gather Cache
-        # encoder_hidden_states = encoder_hidden_states.contiguous()
-        # hidden_states = hidden_states.contiguous()
+        if self.measure_memory and timestep == 0:
+            peak_memory = torch.cuda.max_memory_allocated() / (1024.0 ** 2)
+            logger.info(f"DF Attn memory usage: {peak_memory:.2f} MB")
+            self.measure_memory = False
+        
 
         return hidden_states, encoder_hidden_states
     

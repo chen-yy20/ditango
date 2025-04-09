@@ -23,17 +23,24 @@ class DistriFusionKVCache:
         """
         self.num_timesteps, self.num_layers = get_config().num_inference_steps, get_config().num_layers
         self.full_sp_size = get_usp_group().world_size
+        self.warmup_steps = 3
         
         # Cache structure: {layer_id: {"k": Tensor, "v": Tensor}}
         self.cache: Dict[int, Dict[str, torch.Tensor]] = {}
         
-    def should_cache(self, layer_id: int) -> bool:
+    def warmup(self, layer_id: int) -> bool:
         """Check if current timestep and layer should be cached"""
         timestep = get_timestep()
-        if timestep > 1:
+        if timestep < self.warmup_steps:
             return True
         else:
             return False
+    
+    def should_cache(self) -> bool:
+        if get_timestep() < self.warmup_steps -1 :
+            return False
+        else:
+            return True
         
         # if get_timestep() + 1 >= self.num_timesteps:
         #     return False
@@ -52,7 +59,7 @@ class DistriFusionKVCache:
             key: Key tensor to cache
             value: Value tensor to cache
         """
-        if not self.should_cache(layer_id):
+        if not self.should_cache():
             return
         # Store detached copies of key and value
         self.cache[layer_id] = {
@@ -128,15 +135,17 @@ class easyCache:
     def __init__(self):
        self.num_layers = get_config().num_layers
        self.num_timesteps = get_config().num_inference_steps
+       self.skip = 3
        self.cache = {}
+       logger.info(f"Using easyCache, skip={self.skip}")
        
    
     def is_important(self):
         # logger.info(f"{get_timestep()}-{layer_id} | {importance=} {self.threshold=}")
         timestep = get_timestep()
-        if timestep < 3 or timestep > self.num_timesteps - 3:
+        if timestep < 3:
             return True
-        return get_timestep() % 3 == 0
+        return get_timestep() % self.skip == 0
     
     def should_cache(self, layer_id: int):
         if get_timestep() == self.total_steps -1:
@@ -210,5 +219,12 @@ def get_easy_cache() -> easyCache:
         return None
     return Easy_Cache
 
+def clear_cache():
+    if get_easy_cache() is not None:
+        get_easy_cache().clear()
+        logger.info("Cleared Easy Cache")
+    if get_fusion_cache() is not None:
+        get_fusion_cache().clear()
+        logger.info("Cleared Fusion Cache")
 
 

@@ -29,8 +29,10 @@ class proAttention:
         
         self.use_ringfusion = get_config().use_ringfusion
         self.small_ring_stride = 8
+        self.measure_memory = True
         if self.layer_id == 0:
             logger.info(f"R{self.global_rank}L{layer_id} | Using RingFusion Attn.")
+            
         
     def async_ring_p2p_commit(self, tensors: Tuple[torch.Tensor, ...], src_rank: int, dst_rank: int):
         """Set up ring communication for sending and receiving tensors asynchronously.
@@ -79,6 +81,8 @@ class proAttention:
         next_k, next_v = None, None
         out, lse = None, None
         timestep = get_timestep()
+        if self.measure_memory and timestep == 0:
+            torch.cuda.reset_max_memory_allocated()
         # block size 就是 isp stride， 每次计算只计算一个block
         
         # =================== 0. Memory Check  =================
@@ -217,6 +221,9 @@ class proAttention:
                     
         if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
             logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
+        if self.measure_memory and timestep == 0:
+            max_memory = torch.cuda.max_memory_allocated()
+            logger.info(f"Attn memory allocated: {max_memory / 1024 / 1024} MB")
         
         stride_map = get_stride_map()
         stride_map.record_out_redundancy(timestep=timestep,
