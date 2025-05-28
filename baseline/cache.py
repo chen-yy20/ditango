@@ -66,6 +66,7 @@ class DistriFusionKVCache:
             "k": key.detach().clone(),
             "v": value.detach().clone()
         }
+        # logger.debug(f"t{get_timestep()} l{layer_id} | Distrifusion KV Store, shapes: k={key.shape}, v={value.shape}, mem={torch.cuda.max_memory_allocated()}")
     
     def get_kv(self, layer_id: int) -> Optional[Dict[str, torch.Tensor]]:
         """

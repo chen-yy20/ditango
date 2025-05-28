@@ -240,6 +240,9 @@ class StrideMap:
         # Set divider based on redundancy value
         for t in range(self.num_timesteps):
             for l in range(self.num_layers):
+                if t == self.num_timesteps - 1:
+                    self.divider_map[t, l] = 1
+                    continue
                 redundancy = self.redundancy_map[t, l].item()
                 
                 # Only process non-zero redundancy values

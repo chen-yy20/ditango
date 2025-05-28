@@ -52,6 +52,7 @@ class proCache:
     def update_cache_blocks(self, new_isp_stride: int, next_target_block_id: int):
         # if self.layer_id == 0:
         #     logger.info(f"Updating cache blocks: {self.curr_isp_stride=}, new_isp_stride {new_isp_stride}, next_target_block_id {next_target_block_id}")
+        # next_target_block_id = 0 # USAGE: Uncomment when processing Time-first break down evaluate
         if new_isp_stride == self.isp_size: # 全面刷新
             self.curr_isp_stride = self.isp_size
             self.curr_block_num = self.isp_size
