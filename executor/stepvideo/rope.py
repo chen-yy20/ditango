@@ -79,7 +79,7 @@ class RoPE3D(RoPE1D):
         for i, (D, x) in enumerate(zip(ch_split, torch.split(tokens, ch_split, dim=-1))):
             cos, sin = self.get_cos_sin(D, int(mesh_grid.max()) + 1, tokens.device, tokens.dtype)
             
-            if parallel and not get_config().use_distrifusion:
+            if parallel:
                 # mesh = torch.chunk(mesh_grid[:, :, i], get_sequence_parallel_world_size(),dim=1)[get_sequence_parallel_rank()].clone()
                 mesh = split_tensor_uneven(mesh_grid[:,:,i], get_sequence_parallel_world_size(), dim=1, tensor_name="mesh")[get_sequence_parallel_rank()].clone()
             else:

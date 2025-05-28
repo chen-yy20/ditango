@@ -3,7 +3,7 @@
 # Basic parameters
 model-name: stepvideo
 ditango-base: ./ditango/
-output-fn: ./result/
+output-fn: ./Tango_evaluate/tango
 tag: test
 
 # Generation parameters

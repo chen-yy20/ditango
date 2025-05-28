@@ -214,9 +214,9 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        # if self.use_ringfusion and  self.global_rank == 0:
-        #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
-        #     self.cache.report_cache_status(self.layer_id)
+        if self.layer_id == 0:
+            print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
+            self.cache.report_cache_status(self.layer_id)
                     
         if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
             logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
@@ -391,9 +391,9 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        # if self.use_ringfusion and  self.layer_id == 0 and self.global_rank == 0:
-        #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
-        #     self.cache.report_cache_status(self.layer_id)
+        if self.layer_id == 0:
+            print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
+            self.cache.report_cache_status(self.layer_id)
                     
         # if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
         #     logger.info(f"******************* Processing out_shape: {out.shape=}*******************")

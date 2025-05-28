@@ -86,8 +86,7 @@ class StepVideoPipeline(DiffusionPipeline):
         name_suffix: str = '',
     ):
         super().__init__()
-
-        save_path = "./oresult"
+        save_path = get_config().output_fn
         self.register_modules(
             transformer=transformer,
             scheduler=scheduler,

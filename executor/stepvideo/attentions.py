@@ -112,16 +112,16 @@ class Attention(nn.Module):
         
         with get_timer("df_comm"):
             kv_dict = cache.get_kv(self.layer_id)
-            if kv_dict is None or timestep < 1: #full
-                k = k.contiguous()
-                v = v.contiguous()
+            k = k.contiguous()
+            v = v.contiguous()
+            if kv_dict is None or timestep < 3: #full
                 new_k = get_isp_group().all_gather(k, dim=1)
                 new_v = get_isp_group().all_gather(v, dim=1)
                 cache.store(self.layer_id, k, v)
             else:
                 cached_k = kv_dict['k'].contiguous()
                 cached_v = kv_dict['v'].contiguous()
-                logger.debug(f"L{self.layer_id} | cached_k shape: {cached_k.shape}, cached_v shape: {cached_v.shape}")
+                # logger.debug(f"L{self.layer_id} | cached_k shape: {cached_k.shape}, cached_v shape: {cached_v.shape}")
                 cache.store(self.layer_id, k, v)
                 stale_k = get_isp_group().all_gather(cached_k, dim=1)
                 stale_v = get_isp_group().all_gather(cached_v, dim=1)
@@ -129,8 +129,8 @@ class Attention(nn.Module):
                 stale_v_list = split_tensor_uneven(stale_v, get_isp_group().world_size, dim=1)
                 stale_k_list[get_isp_group().rank_in_group] = k
                 stale_v_list[get_isp_group().rank_in_group] = v
-                new_k = torch.cat(stale_k_list, dim=1)
-                new_v = torch.cat(stale_v_list, dim=1)
+                new_k = torch.cat(stale_k_list, dim=1).contiguous()
+                new_v = torch.cat(stale_v_list, dim=1).contiguous()
             
         # logger.debug(f"{q.shape=}, new_k shape: {new_k.shape}, new_v shape: {new_v.shape}")
         x = flash_attn_func(
