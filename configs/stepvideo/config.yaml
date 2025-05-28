@@ -1,0 +1,32 @@
+# DiTango Configuration
+
+# Basic parameters
+model-name: stepvideo
+ditango-base: ./ditango/
+output-fn: ./Tango_evaluate/tango
+tag: test
+
+# Generation parameters
+seed: 42
+num-layers: 48
+num-inference-steps: 50
+
+# Performance testing parameters
+warmup: 0
+repeat: 2
+enable-timing: false
+
+# Distributed parameters
+gpus: null
+node: null
+do-cfg-parallel: false
+
+# Baseline experiment parameters
+use-ringfusion: false
+use-ulysses: false
+use-distrifusion: false
+use-easy-cache: false
+
+# StrideMap configuration
+stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
+stride-percentiles: [0, 0, 90]  # Percentile thresholds for redundancy mapping
