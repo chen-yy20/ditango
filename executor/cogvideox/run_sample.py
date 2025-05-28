@@ -17,7 +17,7 @@ from ditango.core.stride_map import preprocess_for_stridemap
 logger = init_logger(__name__)
 
 init_ditango(
-    config_path="./ditango/configs/cogvideox1.5-5b/config.yaml",
+    config_path="./ditango/configs/cogvideox-5b/config.yaml",
     use_timer=False,
 )
 
@@ -52,11 +52,10 @@ frames = 48
 # pipe.vae.enable_tiling() 
 
 
-if config.output_fn != "none":
-    os.makedirs(config.output_fn, exist_ok=True)
+if config.output_dir != "none":
     for prompt in prompt_list:
         if config.local_rank == 0:
-            print(f"output_fn: {config.output_fn}\n prompt: {prompt}\n Begin generation...", flush=True)
+            print(f"output_dir: {config.output_dir}\n prompt: {prompt}\n Begin generation...", flush=True)
         video = pipe(
             height=height,
             width=width,
@@ -67,8 +66,8 @@ if config.output_fn != "none":
             generator=generator,
             ).frames[0]
         if config.rank == 0:
-            video_name = f"Cog5B_{prompt.split()[1]}_{config.tag}.mp4" # .mp4 if full video
-            video_output_path = os.path.join(config.output_fn, video_name)
+            video_name = f"Cog5B_{prompt.split()[1]}.mp4" # .mp4 if full video
+            video_output_path = os.path.join(config.output_dir, video_name)
             export_to_video(video, video_output_path, fps=8)
             # image_output_path = os.path.join(config.output_fn, f"Cog5B_{prompt.split()[1]}_{tag}.png")
             # image = video[5]

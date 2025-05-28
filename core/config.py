@@ -3,6 +3,7 @@ import yaml
 from pathlib import Path
 import copy
 import torch.distributed as dist
+import time
 
 class DiTangoConfig:
     """Configuration class to manage DiTango system parameters"""
@@ -18,13 +19,14 @@ class DiTangoConfig:
             # Basic parameters
             'model_name': 'cogvideox1.5-5b',
             'ditango_base': './ditango',
-            'output_fn': 'output',
+            'output_fn': './result',
             'tag': 'test',
             
             # Generation parameters
             'num_layers': 42,
             'num_inference_steps': 5,
             'seed': 42,
+            'use_timer': False,
             
             # Performance testing parameters
             'warmup': 0,
@@ -56,6 +58,7 @@ class DiTangoConfig:
         if not self.config['use_ringfusion']:
             self.config['stride_dividers'] = [1]
         
+        self.process_output_dir()
         # Process environment variables for distributed training
         self.process_env_vars()
         
@@ -73,13 +76,21 @@ class DiTangoConfig:
                     self.config[updated_key] = value
         else:
             print(f"Warning: Config file {config_path} for DiTango not found. Using default values.")
+            
+    def process_output_dir(self):
+        # 获取时间戳
+        timestamp = time.strftime("%Y%m%d_%H%M")
+        subdir = f"{self.config['tag']}_{timestamp}"
+        output_dir = os.path.join(self.config['output_fn'], subdir)
+        os.makedirs(output_dir, exist_ok=True)
+        self.config['output_dir'] = output_dir
     
     def process_env_vars(self):
         """Process environment variables for distributed settings"""
         self.config['world_size'] = int(os.getenv("WORLD_SIZE", "1"))
         self.config['rank'] = int(os.getenv("RANK", "0"))
         self.config['local_rank'] = int(os.getenv("LOCAL_RANK", "0"))
-        self.config['tag'] = os.getenv("TAG", self.config['tag'])
+        # self.config['tag'] = os.getenv("TAG", self.config['tag'])
     
     
     def __getattr__(self, name):

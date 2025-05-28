@@ -22,10 +22,7 @@ logger = init_logger(__name__)
  
 def main():
     args = parse_args()
-    init_ditango(
-        config_path="./ditango/configs/hunyuanvideo/config.yaml",
-        use_timer=True,
-    )
+    init_ditango(config_path="/home/zhongrx/cyy/HunyuanVideo/ditango/configs/hunyuanvideo/config.yaml")
     config = get_config()
     
     # Define your specific prompt here
@@ -39,9 +36,10 @@ def main():
         raise ValueError(f"`models_root` not exists: {models_root_path}")
     
     # Create save folder to save the samples
-    save_path = args.save_path if args.save_path_suffix=="" else f'{args.save_path}_{args.save_path_suffix}'
-    if not os.path.exists(save_path):
-        os.makedirs(save_path, exist_ok=True)
+    # save_path = args.save_path if args.save_path_suffix=="" else f'{args.save_path}_{args.save_path_suffix}'
+    # if not os.path.exists(save_path):
+    #     os.makedirs(save_path, exist_ok=True)
+    save_path = config.output_dir
 
     # Load models
     hunyuan_video_sampler = HunyuanVideoSampler.from_pretrained(models_root_path, args=args)

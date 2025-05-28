@@ -16,8 +16,6 @@ USE_DITANGO = False
 
 def init_ditango(
     config_path: str = None,
-    pattern_list: List = [],
-    use_timer: bool = False,
 ):
     # 1. init arguments
     config = init_config(config_path)
@@ -60,7 +58,7 @@ def init_ditango(
         init_easy_cache()
 
     # 4. init timer
-    if use_timer:
+    if config.use_timer:
         init_timer(enable=False)
     
     global USE_DITANGO

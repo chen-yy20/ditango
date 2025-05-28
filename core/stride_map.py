@@ -423,8 +423,7 @@ class StrideMap:
         """
         # Ensure output directory exists
         if output_dir is None:
-            output_dir = "./logs/"
-        output_dir = "./Tango_evaluate/logs"
+            output_dir = "./result/"
         file_prefix += f'_{get_config().tag}'
         os.makedirs(output_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -659,13 +658,13 @@ def print_stride_map(logger=None):
 
 _stride_map: Optional[StrideMap] = None
 
-def init_stride_map(args, load_map_path=None, custom_percentages=None, custom_dividers=None):
+def init_stride_map(args, redun_map_path=None, custom_percentages=None, custom_dividers=None):
     """
     Initialize global stride map
     
     Args:
         args: Config object containing parameters
-        load_map_path: Optional path to load a pre-computed redundancy map
+        redun_map_path: Optional path to load a pre-computed redundancy map
         custom_percentages: Optional custom percentile thresholds [low, mid, high]
         custom_dividers: Optional custom divider values [lowest, low, mid, high]
         
@@ -691,23 +690,23 @@ def init_stride_map(args, load_map_path=None, custom_percentages=None, custom_di
         return stride_map
     
     # Try to load pre-computed redundancy map if path is provided or check default location
-    if load_map_path is None:
+    if redun_map_path is None:
         # Check default location
         default_path = os.path.join(f"{args.ditango_base}/configs/{args.model_name}/", 
                                   f"redundancy_map_{args.num_inference_steps}_{args.num_layers}.pt")
         if os.path.exists(default_path):
-            load_map_path = default_path
+            redun_map_path = default_path
         else:
             logger.warning(f"No pre-computed redundancy map found at default location: {default_path}, Using full stride map instead")
     
-    if load_map_path is not None and os.path.exists(load_map_path):
+    if redun_map_path is not None and os.path.exists(redun_map_path):
         # Only rank 0 prints the loading message
         if torch.distributed.get_rank() == 0:
-            logger.info(f"Loading pre-computed redundancy map from {load_map_path}")
+            logger.info(f"Loading pre-computed redundancy map from {redun_map_path}")
         
         try:
             # Load the redundancy map tensor
-            loaded_map = torch.load(load_map_path, map_location='cpu')
+            loaded_map = torch.load(redun_map_path, map_location='cpu')
             
             # Verify the loaded map has correct dimensions
             if (loaded_map.shape[0] == args.num_inference_steps and 
@@ -732,7 +731,7 @@ def init_stride_map(args, load_map_path=None, custom_percentages=None, custom_di
                              (f" and dividers {custom_dividers}" if custom_dividers else " and default dividers"))
                     
                     # Generate visualizations for divider map in logs directory
-                    stride_map.visualize_divider_map(output_dir="./logs/")
+                    stride_map.visualize_divider_map(output_dir=args.output_dir)
             else:
                 # If dimensions don't match, warn and use default
                 if torch.distributed.get_rank() == 0:
@@ -927,7 +926,7 @@ def generate_divider_map_with_custom_settings(custom_percentages=None, custom_di
     
     # Set output directory to logs if not specified
     if output_dir is None:
-        output_dir = "./logs/"
+        output_dir = config.output_dir
     
     # Generate divider map with custom parameters
     stride_map.generate_divider_map_from_redundancy(

@@ -589,7 +589,7 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
     ):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
-        print("================== Using DiTango HunyuanVideo Tranformer! =================", flush=True)
+        print("================== Using DiTango HunyuanVideo Transformer! =================", flush=True)
 
         self.patch_size = patch_size
         self.in_channels = in_channels
