@@ -3,7 +3,7 @@
 # Basic parameters
 model-name: cogvideox-5b
 ditango-base: ./ditango/
-output-fn: ./Tango_evaluate/df
+output-fn: ./result/
 tag: test
 
 # Generation parameters
@@ -22,9 +22,9 @@ node: null
 do-cfg-parallel: false
 
 # Baseline experiment parameters
-use-ringfusion: false
+use-ringfusion: true
 use-ulysses: false
-use-distrifusion: true
+use-distrifusion: false
 use-easy-cache: false
 
 # StrideMap configuration

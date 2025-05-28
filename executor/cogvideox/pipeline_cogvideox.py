@@ -32,8 +32,9 @@ from diffusers.pipelines.cogvideo.pipeline_output import CogVideoXPipelineOutput
 
 from ditango.executor.cogvideox import CogVideoXTransformer3DModel
 from ditango.core.parallel_state import get_world_group, get_cfg_group, get_usp_group
+from ditango.core.config import get_config
 from ditango.logger import init_logger
-from ditango.timer import get_timer, enable_timing
+from ditango.timer import enable_timing
 from ditango.utils import update_timestep
 import time
 
@@ -611,9 +612,8 @@ class CogVideoXPipeline(DiffusionPipeline):
         update_timestep(i)
         if self.interrupt:
           continue
-        if i == 2:
+        if i == 2 and get_config().enable_timing:
           enable_timing()
-          logger.info("Enable timing!")
         
         latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance and get_cfg_group().world_size != 2 else latents
         latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)

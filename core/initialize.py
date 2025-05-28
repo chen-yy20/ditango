@@ -58,7 +58,7 @@ def init_ditango(
         init_easy_cache()
 
     # 4. init timer
-    if config.use_timer:
+    if config.enable_timing:
         init_timer(enable=False)
     
     global USE_DITANGO

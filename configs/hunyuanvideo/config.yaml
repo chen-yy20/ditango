@@ -10,7 +10,6 @@ tag: arxiv_version
 seed: 42
 num-layers: 60
 num-inference-steps: 50
-use-timer: true
 
 # Performance testing parameters
 warmup: 0

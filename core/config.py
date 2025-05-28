@@ -26,7 +26,6 @@ class DiTangoConfig:
             'num_layers': 42,
             'num_inference_steps': 5,
             'seed': 42,
-            'use_timer': False,
             
             # Performance testing parameters
             'warmup': 0,

@@ -218,15 +218,17 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        if self.layer_id == 0:
-            print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
-            self.cache.report_cache_status(self.layer_id)
+        
+        # ================= 6. Report Info for Debug ================
+        # if self.layer_id == 0:
+        #     # print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
+        #     self.cache.report_cache_status(self.layer_id)
                     
-        if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
-            logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
-        if self.measure_memory and timestep == 0:
-            max_memory = torch.cuda.max_memory_allocated()
-            logger.info(f"Attn memory allocated: {max_memory / 1024 / 1024} MB")
+        # if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
+        #     logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
+        # if self.measure_memory and timestep == 0:
+        #     max_memory = torch.cuda.max_memory_allocated()
+        #     logger.info(f"Attn memory allocated: {max_memory / 1024 / 1024} MB")
         
         stride_map = get_stride_map()
         stride_map.record_out_redundancy(timestep=timestep,
