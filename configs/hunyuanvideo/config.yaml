@@ -3,13 +3,13 @@
 # Basic parameters
 model-name: hunyuanvideo
 ditango-base: ./ditango/
-output-fn: ./result/
+output-fn: ./Tango_evaluate/motiv
 tag: test
 
 # Generation parameters
 seed: 42
 num-layers: 60
-num-inference-steps: 10
+num-inference-steps: 50
 
 # Performance testing parameters
 warmup: 0
@@ -24,9 +24,9 @@ do-cfg-parallel: false
 # Baseline experiment parameters
 use-ringfusion: false
 use-ulysses: false
-use-distrifusion: true
-use-easy-cache: false
+use-distrifusion: false
+use-easy-cache: true
 
 # StrideMap configuration
 stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
-stride-percentiles: [20, 60, 90]  # Percentile thresholds for redundancy mapping
+stride-percentiles: [0, 40, 90]  # Percentile thresholds for redundancy mapping

@@ -19,7 +19,7 @@ from hyvideo.modules.token_refiner import SingleTokenRefiner
 
 from ditango.core.parallel_state import get_usp_group
 from ditango.core.config import get_config
-from ditango.utils import split_tensor_uneven, remove_padding_after_gather
+from ditango.utils import split_tensor_uneven, remove_padding_after_gather, get_timestep
 from ditango.logger import init_logger
 from ditango.executor.hunyuanvideo.attention_hunyuan import Hunyuan_DiTangoProcessor
 from ditango.baseline.cache import get_easy_cache, get_fusion_cache
@@ -204,16 +204,34 @@ class MMDoubleStreamBlock(nn.Module):
         txt_k = self.txt_attn_k_norm(txt_k).to(txt_v)
         
         if get_config().use_distrifusion and get_usp_group().world_size > 1:
+            cache = get_fusion_cache()
             img_k = img_k.contiguous()
             img_v = img_v.contiguous()
             txt_k = txt_k.contiguous()
             txt_v = txt_v.contiguous()
-            
-            
-            img_k = get_usp_group().all_gather(img_k, dim=1)
-            img_v = get_usp_group().all_gather(img_v, dim=1)
             txt_k = get_usp_group().all_gather(txt_k, dim=1)
             txt_v = get_usp_group().all_gather(txt_v, dim=1)
+            c_img_k = None
+            if not cache.warmup(self.layer_id):
+                c_img_k = cache.get_kv(self.layer_id)['k'].contiguous()
+                c_img_v = cache.get_kv(self.layer_id)['v'].contiguous()
+                # logger.debug(f"t{get_timestep()} l{self.layer_id} | get cache, {c_img_k.shape=}, {c_img_v.shape=}")
+            cache.store(self.layer_id, key=img_k, value=img_v)
+            if c_img_k is not None:
+                c_img_k = get_usp_group().all_gather(c_img_k, dim=1)
+                c_img_v = get_usp_group().all_gather(c_img_v, dim=1)
+                c_img_k_list = split_tensor_uneven(c_img_k, get_usp_group().world_size, dim = 1)
+                c_img_v_list = split_tensor_uneven(c_img_v, get_usp_group().world_size, dim = 1)
+                c_img_k_list[get_usp_group().rank_in_group] = img_k
+                c_img_v_list[get_usp_group().rank_in_group] = img_v
+                img_k = torch.cat(c_img_k_list, dim=1)
+                img_v = torch.cat(c_img_v_list, dim=1)
+                # logger.debug(f"l{self.layer_id} | cache and cat, {img_k.shape=}, {img_v.shape=}")
+            else:
+                img_k = get_usp_group().all_gather(img_k, dim=1)
+                img_v = get_usp_group().all_gather(img_v, dim=1)
+            
+            
 
         # Run actual attention.
         q = torch.cat((img_q, txt_q), dim=1)
@@ -238,7 +256,7 @@ class MMDoubleStreamBlock(nn.Module):
         #     batch_size=img_k.shape[0],
         # )
         if get_config().use_distrifusion:
-            logger.debug(f"DISTRIFUSION | q.shape={q.shape} k.shape={k.shape} {cu_seqlens_q=} {cu_seqlens_kv=} {max_seqlen_q=} {max_seqlen_kv=}")
+            # logger.debug(f"DISTRIFUSION | q.shape={q.shape} k.shape={k.shape} {cu_seqlens_q=} {cu_seqlens_kv=} {max_seqlen_q=} {max_seqlen_kv=}")
 
             attn = attention(
                 q,
@@ -256,7 +274,7 @@ class MMDoubleStreamBlock(nn.Module):
             easyCache = get_easy_cache()
             if not get_easy_cache().is_important():
                 attn = easyCache.get_feature(self.layer_id, name="attn")
-                logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn.shape=}")
+                # logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn.shape=}")
             else:
                 attn = self.attn_proc.ringfusion_attn(
                     q,
@@ -415,7 +433,7 @@ class MMSingleStreamBlock(nn.Module):
                 img_qq.shape == img_q.shape and img_kk.shape == img_k.shape
             ), f"img_kk: {img_qq.shape}, img_q: {img_q.shape}, img_kk: {img_kk.shape}, img_k: {img_k.shape}"
             img_q, img_k = img_qq, img_kk
-        
+            
         if get_config().use_distrifusion and get_usp_group().world_size > 1:
             img_v, txt_v = v[:, :-txt_len, :, :], v[:, -txt_len:, :, :]
             img_k = img_k.contiguous()
@@ -428,7 +446,6 @@ class MMSingleStreamBlock(nn.Module):
             img_v = get_usp_group().all_gather(img_v, dim=1)
             txt_v = get_usp_group().all_gather(txt_v, dim=1)
             v = torch.cat((img_v, txt_v), dim=1)
-        
         q = torch.cat((img_q, txt_q), dim=1)
         k = torch.cat((img_k, txt_k), dim=1)
         
@@ -464,7 +481,7 @@ class MMSingleStreamBlock(nn.Module):
             easyCache = get_easy_cache()
             if not get_easy_cache().is_important():
                 attn = easyCache.get_feature(self.layer_id, name="attn")
-                logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn.shape=}")
+                # logger.debug(f"t{easyCache.timestep}l{self.layer_id} | skip, {attn.shape=}")
             else:
                 attn = self.attn_proc.ringfusion_attn(
                     q,
@@ -753,7 +770,7 @@ class HYVideoDiffusionTransformer(ModelMixin, ConfigMixin):
         if get_config().use_distrifusion:
             full_cu_seqlens_kv = get_cu_seqlens(text_mask, img.shape[1])
             full_max_seqlen_kv = full_cu_seqlens_kv[-1]
-            logger.debug(f"full_cu_seqlens_kv: {full_cu_seqlens_kv} full_max_seqlen_kv: {full_max_seqlen_kv}")
+            # logger.debug(f"full_cu_seqlens_kv: {full_cu_seqlens_kv} full_max_seqlen_kv: {full_max_seqlen_kv}")
             
         if get_usp_group().world_size > 1:
             img = split_tensor_uneven(img, get_usp_group().world_size, dim=1, tensor_name='img')[get_usp_group().rank_in_group]

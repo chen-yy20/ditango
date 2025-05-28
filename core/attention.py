@@ -29,6 +29,7 @@ class proAttention:
         
         self.use_ringfusion = get_config().use_ringfusion
         self.small_ring_stride = 8
+        self.measure_memory = False
         if self.layer_id == 0:
             logger.info(f"R{self.global_rank}L{layer_id} | Using RingFusion Attn.")
         
@@ -244,6 +245,8 @@ class proAttention:
         next_k, next_v, next_cu_seqlens_kv = None, None, None
         out, lse = None, None
         timestep = get_timestep()
+        # if self.measure_memory and timestep == 0:
+        #     torch.cuda.reset_peak_memory_stats()
         
         # block size 就是 isp stride， 每次计算只计算一个block
         
@@ -259,6 +262,7 @@ class proAttention:
         local_block_id = self.local_chunk_id // curr_isp_stride # 当前进程属于哪个block
         target_block_id = self.target_chunk_id // curr_isp_stride # 表示本轮需要计算的block id
         
+        # self.target_chunk_id = self.local_chunk_id # fix: breakdown evaluate
         # =================== 1. Update Cached blocks =================
         if curr_isp_stride == self.isp_size: # 满，刷新指针, 细粒度存储
             self.target_chunk_id = self.local_chunk_id
@@ -387,13 +391,15 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        # if self.use_ringfusion and  self.layer_id == 0 and self.global_rank == 0:
+        # if self.use_ringfusion and self.global_rank == 0 and self.layer_id == 40:
         #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
         #     self.cache.report_cache_status(self.layer_id)
                     
         # if self.global_rank == 0 and timestep == 0 and self.layer_id == 10:
         #     logger.info(f"******************* Processing out_shape: {out.shape=}*******************")
-       
+        if self.measure_memory and timestep == 0:
+            peak_memory = torch.cuda.max_memory_allocated()
+            logger.info(f"Peak Attn memory usage: {peak_memory / 1024**2:.2f} MB")
         stride_map = get_stride_map()
         stride_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,

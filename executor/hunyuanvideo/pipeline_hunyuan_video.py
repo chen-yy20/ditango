@@ -996,6 +996,9 @@ class HunyuanVideoPipeline(DiffusionPipeline):
                 if is_ditango_initialized():
                     # {i}", flush=True)
                     update_timestep(i)
+                    logger.info(f"Completed generating video for the prompt")
+                    max_memory = torch.cuda.max_memory_allocated() 
+                    print(f'T{i} - Maximum GPU memory used: {max_memory / 1024**2:.2f} MB')
                 if self.do_classifier_free_guidance and is_ditango_initialized() and get_cfg_group().world_size > 1:
                     assert get_cfg_group().world_size == 2, f"cfg parallel size must be 2, found {get_cfg_group().world_size}"
                     latent_model_input = (latents)
