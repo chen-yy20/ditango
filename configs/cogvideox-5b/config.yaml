@@ -16,7 +16,7 @@ enable-timing: true
 do-preprocess: false
 
 # Distributed parameters
-do-cfg-parallel: false
+do-cfg-parallel: true
 
 # Baseline experiment parameters
 use-ringfusion: true

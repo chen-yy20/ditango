@@ -12,13 +12,10 @@ num-layers: 60
 num-inference-steps: 50
 
 # Performance testing parameters
-warmup: 0
-repeat: 2
 enable-timing: true
+do-preprocess: false
 
 # Distributed parameters
-gpus: null
-node: null
 do-cfg-parallel: false
 
 # Baseline experiment parameters
