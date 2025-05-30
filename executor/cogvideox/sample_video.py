@@ -11,8 +11,7 @@ from ditango.executor.cogvideox import CogVideoXPipeline
 from ditango.executor.cogvideox import CogVideoXTransformer3DModel
 
 from ditango.logger import init_logger
-from ditango.timer import print_time_statistics, enable_timing
-from ditango.core.redundancy_map import redundancy_preprocess
+from ditango.timer import print_time_statistics
 from ditango.baseline.cache import clear_cache
 
 logger = init_logger(__name__)
@@ -38,27 +37,6 @@ height = 480
 width = 720
 frames = 49
 fps = 8
-
-# func = pipe
-# func_args = {
-#     "height": height,
-#     "width": width,
-#     "num_frames": frames,
-#     "num_inference_steps": config.num_inference_steps,
-#     "guidance_scale": 6,
-#     "generator": generator,
-# }
-
-# redundancy_preprocess(func, func_args, prompt_list)
-# exit()
-
-# prompts = []
-# save_path = config.output_dir
-# with open('./prompts.txt', 'r') as f:
-#     for line in f.readlines():
-#         prompts.append(line.strip())
-        
-# prompts = prompt_list
 
 save_path = config.output_dir
 prompts = [
