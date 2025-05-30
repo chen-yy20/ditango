@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 # from .redundancy_map import init_redundancy_map, print_redundancy_map
 from .config import init_config, print_config
 from .parallel_state import init_distributed_environment, init_model_parallel, get_world_group, generate_parallel_groups
-from .stride_map import init_stride_map
+from .redundancy_map import init_redundancy_map
 
 from ditango.baseline.cache import init_fusion_cache, init_easy_cache
 
@@ -50,7 +50,7 @@ def init_ditango(
     
     
     # 3. init stride map
-    init_stride_map(config)
+    init_redundancy_map(config)
     
     if config.use_distrifusion:
         init_fusion_cache()

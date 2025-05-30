@@ -56,7 +56,7 @@ from ditango.core.initialize import is_ditango_initialized
 from ditango.core.config import get_config
 from ditango.utils import update_timestep
 from ditango.executor.hunyuanvideo.hunyuan_transformer import HYVideoDiffusionTransformer
-from ditango.core.stride_map import is_preprocessing
+from ditango.core.redundancy_map import is_preprocessing
 
 logger = init_logger(__name__)  # pylint: disable=invalid-name
 

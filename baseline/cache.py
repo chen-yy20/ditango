@@ -3,7 +3,7 @@ import torch
 import torch.distributed as dist
 
 from ..core.group_coordinate import  GroupCoordinator
-from ..core.stride_map import get_stride_map
+from ..core.redundancy_map import get_redundancy_map
 from ..core.parallel_state import get_usp_group
 from ..core.config import get_config
 from ..logger import init_logger
@@ -19,7 +19,7 @@ class DistriFusionKVCache:
         Initialize the KV caching system for DistriFusion models
         
         Args:
-            stride_map: Binary tensor indicating whether to cache at each timestep and layer
+            redundancy_map: Binary tensor indicating whether to cache at each timestep and layer
         """
         self.num_timesteps, self.num_layers = get_config().num_inference_steps, get_config().num_layers
         self.full_sp_size = get_usp_group().world_size
@@ -44,7 +44,7 @@ class DistriFusionKVCache:
         
         # if get_timestep() + 1 >= self.num_timesteps:
         #     return False
-        # return get_stride_map().get_next_isp_stride(get_timestep(), layer_id) < self.full_sp_size # next step need cache
+        # return get_redundancy_map().get_next_isp_stride(get_timestep(), layer_id) < self.full_sp_size # next step need cache
     
     def is_cached(self, layer_id: int) -> bool:
         """Check if features for given layer are cached"""
@@ -152,7 +152,7 @@ class easyCache:
         if get_timestep() == self.total_steps -1:
             return False
         else:
-            next_step_redundancy = int(get_stride_map()[get_timestep() + 1, layer_id].item())
+            next_step_redundancy = int(get_redundancy_map()[get_timestep() + 1, layer_id].item())
             return next_step_redundancy <= self.threshold # will skip
    
     def get_feature(self, layer_id, name):
@@ -162,7 +162,7 @@ class easyCache:
         #     logger.info(f"{get_timestep()}-{layer_id} | Trying to get feature {name}")
         cached_feature = self.cache[name][layer_id]
         if cached_feature is None:
-            if dist.get_rank():
+            if dist.get_rank() == 0:
                 logger.error(f"{get_timestep()}-{layer_id} | Get None type cached value.")
         return cached_feature
     
@@ -196,7 +196,7 @@ def get_fusion_cache() -> DistriFusionKVCache:
     """
     global Fusion_Cache
     if Fusion_Cache is None:
-        logger.error("DistriFusionKVCache not initialized. Please call init_fusion_cache() first.")
+        # logger.error("DistriFusionKVCache not initialized. Please call init_fusion_cache() first.")
         return None
     return Fusion_Cache
 
@@ -216,7 +216,7 @@ def get_easy_cache() -> easyCache:
     """
     global Easy_Cache
     if Easy_Cache is None:
-        logger.error("easyCache not initialized. Please call init_easy_cache() first.")
+        # logger.error("easyCache not initialized. Please call init_easy_cache() first.")
         return None
     return Easy_Cache
 

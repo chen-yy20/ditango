@@ -28,24 +28,19 @@ class DiTangoConfig:
             'seed': 42,
             
             # Performance testing parameters
-            'warmup': 0,
-            'repeat': 2,
             'enable_timing': False,
+            'do_preprocess': False,
 
             # Distributed parameters
-            'gpus': None,
-            'node': None,
             'do_cfg_parallel': False,
             
             # Baseline experiment parameters
             'use_ringfusion': True,
             'use_ulysses': False,
             'use_distrifusion': False,
-            
-            # Cache and optimization parameters
             'use_easy_cache': False,
             
-            # StrideMap configuration
+            # RedundancyMap configuration
             'stride_dividers': [8, 4, 2, 1],  # Divider values from largest stride to smallest
             'stride_percentiles': [20, 50, 80]  # Percentile thresholds for redundancy mapping
         }
@@ -53,6 +48,12 @@ class DiTangoConfig:
         # Load from config file if provided
         if config_path is not None:
             self.load_from_file(config_path)
+            
+        if self.config['do_preprocess']:
+            self.config['use_ringfusion'] = False
+            self.config['use_ulysses'] = False
+            self.config['use_distrifusion'] = False
+            self.config['use_easy_cache'] = False
             
         if not self.config['use_ringfusion']:
             self.config['stride_dividers'] = [1]

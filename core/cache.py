@@ -3,7 +3,7 @@ import torch
 
 from ..logger import init_logger
 from ..utils import update_out_and_lse, get_timestep
-from .stride_map import get_stride_map
+from .redundancy_map import get_redundancy_map
 
 logger = init_logger(__name__)
 class proCache:
@@ -22,7 +22,7 @@ class proCache:
         self.memory_constraint = 0.72 * torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
         
     def get_curr_isp_stride(self, layer_id: int):
-        isp_stride = int(get_stride_map()[get_timestep(), layer_id].item())
+        isp_stride = int(get_redundancy_map()[get_timestep(), layer_id].item())
         return isp_stride
     
     def _merge_blocks(self, new_block_num: int):

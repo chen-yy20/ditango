@@ -7,7 +7,7 @@ from .group_coordinate import GroupCoordinator
 
 from .cache import proCache
 from .config import get_config
-from .stride_map import get_stride_map
+from .redundancy_map import get_redundancy_map
 
 from ..logger import init_logger
 from ..timer import get_timer
@@ -87,8 +87,8 @@ class proAttention:
         
         
         # =================== 0. Memory Check  =================
-        curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
-        next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
+        curr_isp_stride = get_redundancy_map().get_curr_isp_stride(timestep, self.layer_id)
+        next_isp_stride = get_redundancy_map().get_next_isp_stride(timestep, self.layer_id)
         
         if timestep == 0:
             self.cache.set_block_size_mb(value)
@@ -230,8 +230,8 @@ class proAttention:
         #     max_memory = torch.cuda.max_memory_allocated()
         #     logger.info(f"Attn memory allocated: {max_memory / 1024 / 1024} MB")
         
-        stride_map = get_stride_map()
-        stride_map.record_out_redundancy(timestep=timestep,
+        redundancy_map = get_redundancy_map()
+        redundancy_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,
                                             curr_out=out)
         return out
@@ -263,8 +263,8 @@ class proAttention:
         # block size 就是 isp stride， 每次计算只计算一个block
         
         # =================== 0. Initialize  =================
-        curr_isp_stride = get_stride_map().get_curr_isp_stride(timestep, self.layer_id)
-        next_isp_stride = get_stride_map().get_next_isp_stride(timestep, self.layer_id)
+        curr_isp_stride = get_redundancy_map().get_curr_isp_stride(timestep, self.layer_id)
+        next_isp_stride = get_redundancy_map().get_next_isp_stride(timestep, self.layer_id)
         
         if not self.cache.pass_memory_check(next_isp_stride, self.layer_id):
             next_isp_stride = self.isp_size
@@ -412,8 +412,8 @@ class proAttention:
         if self.measure_memory and timestep == 0:
             peak_memory = torch.cuda.max_memory_allocated()
             logger.info(f"Peak Attn memory usage: {peak_memory / 1024**2:.2f} MB")
-        stride_map = get_stride_map()
-        stride_map.record_out_redundancy(timestep=timestep,
+        redundancy_map = get_redundancy_map()
+        redundancy_map.record_out_redundancy(timestep=timestep,
                                             layer_id=self.layer_id,
                                             curr_out=out)
         return out

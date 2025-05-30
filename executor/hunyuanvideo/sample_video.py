@@ -11,8 +11,6 @@ from hyvideo.utils.file_utils import save_videos_grid
 
 from ditango.core.initialize import init_ditango
 from ditango.core.config import get_config
-from ditango.core.stride_map import preprocess_for_stridemap
-
 
 from ditango.logger import init_logger
 from ditango.timer import print_time_statistics

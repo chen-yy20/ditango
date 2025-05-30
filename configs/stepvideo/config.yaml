@@ -27,6 +27,6 @@ use-ulysses: false
 use-distrifusion: false
 use-easy-cache: false
 
-# StrideMap configuration
+# RedundancyMap configuration
 stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest
 stride-percentiles: [0, 0, 90]  # Percentile thresholds for redundancy mapping

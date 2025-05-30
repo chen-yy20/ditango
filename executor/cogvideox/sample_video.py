@@ -12,7 +12,7 @@ from ditango.executor.cogvideox import CogVideoXTransformer3DModel
 
 from ditango.logger import init_logger
 from ditango.timer import print_time_statistics, enable_timing
-from ditango.core.stride_map import preprocess_for_stridemap
+from ditango.core.redundancy_map import redundancy_preprocess
 from ditango.baseline.cache import clear_cache
 
 logger = init_logger(__name__)
@@ -49,7 +49,7 @@ fps = 8
 #     "generator": generator,
 # }
 
-# preprocess_for_stridemap(func, func_args, prompt_list)
+# redundancy_preprocess(func, func_args, prompt_list)
 # exit()
 
 # prompts = []
