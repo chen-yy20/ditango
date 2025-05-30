@@ -26,8 +26,8 @@ from stepvideo.modules.normalization import (
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.modeling_utils import ModelMixin
 
-from ditango.executor.stepvideo.parallel import parallel_forward
-from ditango.executor.stepvideo.blocks import StepVideoTransformerBlock, PatchEmbed
+from ditango.executor.step.parallel import parallel_forward
+from ditango.executor.step.blocks import StepVideoTransformerBlock, PatchEmbed
 from ditango.timer import get_timer
 
 

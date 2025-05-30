@@ -14,7 +14,7 @@ import asyncio
 from stepvideo.diffusion.scheduler import FlowMatchDiscreteScheduler
 from stepvideo.utils import VideoProcessor
 
-from ditango.executor.stepvideo.model import StepVideoModel
+from ditango.executor.step.model import StepVideoModel
 from ditango.core.parallel_state import get_cfg_group
 from ditango.core.config import get_config
 from ditango.timer import enable_timing

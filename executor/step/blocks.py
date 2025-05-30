@@ -20,8 +20,8 @@ from stepvideo.modules.normalization import RMSNorm
 
 from ditango.timer import get_timer
 from ditango.core.config import get_config
-from ditango.executor.stepvideo.rope import RoPE3D
-from ditango.executor.stepvideo.attentions import Attention
+from ditango.executor.step.rope import RoPE3D
+from ditango.executor.step.attentions import Attention
 from ditango.baseline.cache import get_easy_cache
 
 

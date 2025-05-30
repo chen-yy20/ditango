@@ -8,7 +8,7 @@ from ditango.logger import init_logger
 from ditango.core.initialize import init_ditango
 from ditango.core.config import get_config
 from ditango.timer import print_time_statistics
-from ditango.executor.stepvideo.video_pipeline import StepVideoPipeline
+from ditango.executor.step.video_pipeline import StepVideoPipeline
 
 logger = init_logger(__name__)
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     
     
     prompt = args.prompt
-    prompt = "橘色小猫带着红色领结，在舞台上跳出一个完美的旋转动作。"
+    prompt = "一名宇航员在月球上发现一块石碑，上面印有stepfun字样，闪闪发光"
     videos = pipeline(
         prompt=prompt, 
         num_frames=args.num_frames, 
