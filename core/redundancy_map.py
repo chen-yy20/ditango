@@ -860,7 +860,7 @@ def is_preprocessing():
         return False
     return _redundancy_map.auto_setting
 
-def redundancy_preprocess(func, func_args, prompt_list):
+def redundancy_preprocess(func, func_args):
     """
     Preprocess for generating stride map with auto-setting.
     Only rank 0 will set the map, then broadcast to all processes.
@@ -877,6 +877,13 @@ def redundancy_preprocess(func, func_args, prompt_list):
     
     # Enable auto setting on all processes (only rank 0 will collect data)
     get_redundancy_map().enable_auto_setting()
+    
+    # You can use your own prompt here. Basically different prompts have similar redundancy map on specimic model.
+    prompt_list = [
+    "A playful black Labrador, adorned in a vibrant pumpkin-themed Halloween costume, frolics in a sunlit autumn garden, surrounded by fallen leaves. The dog's costume features a bright orange body with a green leafy collar, perfectly complementing its shiny black fur. As it bounds joyfully across the lawn, the sunlight catches the costume's fabric, creating a delightful contrast with the dog's dark coat. The scene captures the essence of autumn festivities, with the dog's wagging tail and playful demeanor adding to the cheerful atmosphere. Nearby, carved pumpkins and scattered leaves enhance the festive setting.",
+    "A charming boat glides gracefully along the serene Seine River, its sails catching a gentle breeze, while the iconic Eiffel Tower stands majestically in the background. The scene is rendered in rich, textured oil paints, capturing the warm hues of a late afternoon sun casting a golden glow over the water. The boat, with its elegant design and vibrant colors, contrasts beautifully with the soft, impressionistic strokes of the surrounding landscape. The Eiffel Tower, painted in delicate detail, rises above the Parisian skyline, its iron latticework shimmering in the light. The riverbanks are adorned with lush greenery and quaint buildings, their reflections dancing on the water's surface, creating a harmonious blend of nature and architecture. The overall composition exudes a sense of tranquility and timeless beauty, inviting viewers to immerse themselves in the idyllic Parisian scene.",
+    "A cat walks on the grass, realistic style.",
+    ]
     
     # Process each prompt to collect redundancy data
     for prompt in prompt_list:

@@ -24,9 +24,9 @@ def main():
     args = parse_args()
     init_ditango(
         config_path="./ditango/configs/hunyuanvideo/config.yaml",
-        use_timer=True,
     )
     config = get_config()
+    assert config.do_preprocess, "Set 'do-preprocess = True' in config.yaml first."
     
     print(args)
     models_root_path = Path(args.model_base)
