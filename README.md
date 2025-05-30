@@ -1,4 +1,4 @@
-# DiTango: Accelerating Video Generation with Distributed Feature Reuse
+# DiTango: Efficient Video Generation with selective attention state caching
 
 DiTango is a video generation acceleration system based on distributed feature reuse. By caching and efficiently reusing key attention computation features, it significantly reduces communication overhead while maintaining high-quality video generation.
 
