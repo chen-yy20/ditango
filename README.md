@@ -77,6 +77,7 @@ Generated videos and parallelization strategy visualizations will be saved to th
 
 ```
 ditango/
+├── core/
 ├── configs/
 │   └── <model_name>/
 │       ├── config.yaml
@@ -86,6 +87,9 @@ ditango/
 │   └── <model_name>/
 │       ├── preprocess.py
 │       └── sample_video.py
+├── timer.py
+├── logger.py
+├── utils.py
 └── README.md
 ```
 
