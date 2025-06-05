@@ -103,7 +103,7 @@ DiTango supports several baseline distributed video generation methods by modify
 use-ditango: true     # Our method
 use-ulysses: false    # Ulysses
 use-distrifusion: false   # DistriFusion
-use-pab: false       # Pipeline-Aware Broadcasting
+use-pab: false       # PAB
 ```
 
 Note: For xDiT baseline comparisons, please refer to the [xDiT repository](https://github.com/xdit-project/xDiT).
