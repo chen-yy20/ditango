@@ -27,7 +27,7 @@ class proAttention:
         self.target_chunk_id = self.local_chunk_id // self.isp_size # 初始化chunk的指针，表示计算到了哪个chunk，从0到isp_size-1一直循环
         self.cache = proCache(isp_size=self.isp_size, layer_id=layer_id)
         
-        self.use_ringfusion = get_config().use_ringfusion
+        self.use_ditango = get_config().use_ditango
         self.small_ring_stride = 8
         self.measure_memory = False
         if self.layer_id == 0:
@@ -149,7 +149,7 @@ class proAttention:
         
         num_large_ring = 1
         small_ring_stride = curr_isp_stride
-        if curr_isp_stride > self.small_ring_stride and self.use_ringfusion:
+        if curr_isp_stride > self.small_ring_stride and self.use_ditango:
             assert curr_isp_stride % self.small_ring_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for overlap ring strategy"
             num_large_ring = curr_isp_stride // self.small_ring_stride
             small_ring_stride = self.small_ring_stride
@@ -330,7 +330,7 @@ class proAttention:
         
         num_large_ring = 1
         small_ring_stride = curr_isp_stride
-        if curr_isp_stride > self.small_ring_stride and self.use_ringfusion:
+        if curr_isp_stride > self.small_ring_stride and self.use_ditango:
             assert curr_isp_stride % self.small_ring_stride == 0, f"Does not support this ISP stride {curr_isp_stride} for overlap ring strategy"
             num_large_ring = curr_isp_stride // self.small_ring_stride
             small_ring_stride = self.small_ring_stride
@@ -403,7 +403,7 @@ class proAttention:
         # ================= 5. Cache Management =================
         next_target_block_id = self.target_chunk_id // next_isp_stride
         self.cache.update_cache_blocks(next_isp_stride, next_target_block_id)
-        # if self.use_ringfusion and self.global_rank == 0 and self.layer_id == 40:
+        # if self.use_ditango and self.global_rank == 0 and self.layer_id == 40:
         #     print(f"R{self.global_rank}L{self.layer_id} | Cache updated with {next_isp_stride=}, {next_target_block_id=}", flush=True)
         #     self.cache.report_cache_status(self.layer_id)
                     

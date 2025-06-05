@@ -19,10 +19,10 @@ do-preprocess: false
 do-cfg-parallel: true
 
 # Baseline experiment parameters
-use-ringfusion: true
+use-ditango: true
 use-ulysses: false
 use-distrifusion: false
-use-easy-cache: false
+use-pab: false
 
 # RedundancyMap configuration
 stride-dividers: [8, 4, 2, 1]  # Divider values from largest stride to smallest

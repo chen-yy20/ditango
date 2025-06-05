@@ -151,7 +151,7 @@ class CogVideoXBlock(nn.Module):
         )
 
         # attention
-        if get_config().use_easy_cache:
+        if get_config().use_pab:
             easyCache = get_easy_cache()
             if not easyCache.is_important():
                 attn_hidden_states = easyCache.get_feature(self.layer_id, name="attn")

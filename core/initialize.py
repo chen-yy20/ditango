@@ -54,7 +54,7 @@ def init_ditango(
     
     if config.use_distrifusion:
         init_fusion_cache()
-    elif config.use_easy_cache:
+    elif config.use_pab:
         init_easy_cache()
 
     # 4. init timer

@@ -35,10 +35,10 @@ class DiTangoConfig:
             'do_cfg_parallel': False,
             
             # Baseline experiment parameters
-            'use_ringfusion': True,
+            'use_ditango': True,
             'use_ulysses': False,
             'use_distrifusion': False,
-            'use_easy_cache': False,
+            'use_pab': False,
             
             # RedundancyMap configuration
             'stride_dividers': [8, 4, 2, 1],  # Divider values from largest stride to smallest
@@ -50,12 +50,12 @@ class DiTangoConfig:
             self.load_from_file(config_path)
             
         if self.config['do_preprocess']:
-            self.config['use_ringfusion'] = False
+            self.config['use_ditango'] = False
             self.config['use_ulysses'] = False
             self.config['use_distrifusion'] = False
-            self.config['use_easy_cache'] = False
+            self.config['use_pab'] = False
             
-        if not self.config['use_ringfusion']:
+        if not self.config['use_ditango']:
             self.config['stride_dividers'] = [1]
         
         self.process_output_dir()

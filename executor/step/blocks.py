@@ -266,7 +266,7 @@ class StepVideoTransformerBlock(nn.Module):
         
         scale_shift_q = modulate(self.norm1(q), scale_msa, shift_msa)
         
-        if get_config().use_easy_cache:
+        if get_config().use_pab:
             easy_cache = get_easy_cache()
             if not easy_cache.is_important():
                 attn_q = easy_cache.get_feature(self.layer_id, name='attn_q')

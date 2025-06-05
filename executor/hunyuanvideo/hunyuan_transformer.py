@@ -270,7 +270,7 @@ class MMDoubleStreamBlock(nn.Module):
                 batch_size=img_k.shape[0],
             )
         
-        elif get_config().use_easy_cache: 
+        elif get_config().use_pab: 
             easyCache = get_easy_cache()
             if not get_easy_cache().is_important():
                 attn = easyCache.get_feature(self.layer_id, name="attn")
@@ -298,7 +298,7 @@ class MMDoubleStreamBlock(nn.Module):
                 max_seqlen_kv=max_seqlen_kv,
                 batch_size=img_k.shape[0],
             )
-            if get_config().use_easy_cache:
+            if get_config().use_pab:
                 get_easy_cache().store_feature(self.layer_id, name="attn", feature=attn)
         
         img_attn, txt_attn = attn[:, : img.shape[1]], attn[:, img.shape[1] :]
@@ -477,7 +477,7 @@ class MMSingleStreamBlock(nn.Module):
             max_seqlen_kv=max_seqlen_kv,
             batch_size=x.shape[0],
         )
-        elif get_config().use_easy_cache: 
+        elif get_config().use_pab: 
             easyCache = get_easy_cache()
             if not get_easy_cache().is_important():
                 attn = easyCache.get_feature(self.layer_id, name="attn")

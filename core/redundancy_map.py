@@ -686,7 +686,7 @@ def init_redundancy_map(args, redun_map_path=None, custom_percentages=None, cust
     if custom_dividers is None and hasattr(args, 'stride_dividers'):
         custom_dividers = args.stride_dividers
     
-    if args.use_easy_cache:
+    if args.use_pab:
         print_redundancy_map()
         return redundancy_map
     
@@ -948,7 +948,7 @@ def generate_divider_map_with_custom_settings(custom_percentages=None, custom_di
     file_prefix = f"stride_custom_p{percentages_str}_d{dividers_str}"
     
     # Generate and save visualizations
-    if config.use_ringfusion:
+    if config.use_ditango:
         visualization_files = redundancy_map.visualize_divider_map(output_dir=output_dir, file_prefix=file_prefix)
     
     logger.info(f"Generated custom divider map with percentages {custom_percentages if custom_percentages else 'default'} and dividers {custom_dividers if custom_dividers else 'default'}")
