@@ -93,6 +93,25 @@ ditango/
 └── README.md
 ```
 
+
+## Running Baselines
+
+DiTango supports several baseline distributed video generation methods by modifying `configs/<model_name>/config.yaml`:
+
+```yaml
+# Baseline experiment parameters (set only one to true)
+use-ditango: true     # Our method
+use-ulysses: false    # Ulysses
+use-distrifusion: false   # DistriFusion
+use-pab: false       # Pipeline-Aware Broadcasting
+```
+
+Note: For xDiT baseline comparisons, please refer to the [xDiT repository](https://github.com/xdit-project/xDiT).
+
+
+
+
+
 ## Citation
 
 If you find this work useful, please cite our paper:
