@@ -99,7 +99,3 @@ If you find this work useful, please cite our paper:
 ```
 [Citation placeholder]
 ```
-
-## License
-
-[License placeholder]
